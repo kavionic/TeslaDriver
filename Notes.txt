@@ -1,0 +1,4 @@
+
+Heatsink rib spacing:      6,49mm
+Transistor spacing:       25,96mm
+Total transistor spacing: 77,88mm
