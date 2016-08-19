@@ -45,7 +45,7 @@ void Keyboard::Initialize()
     // Select the QDPH0 pin as a multiplexer input for an event channel.
     QUAD_DECODER_EVCH_MUX = EVSYS_CHMUX_PORTB_PIN6_gc;
     // Enable quadrature decoding and digital filtering in the event channel.
-    QUAD_DECODER_EVCH_CTRL = EVSYS_QDEN_bm | EVSYS_DIGFILT_2SAMPLES_gc;
+    QUAD_DECODER_EVCH_CTRL = EVSYS_QDEN_bm | EVSYS_DIGFILT_8SAMPLES_gc;
 
     // Set quadrature decoding on channel 0 as the event action for the timer.
     QUAD_DECODER_TIMER.CTRLD = TC_EVACT_QDEC_gc | QUAD_DECODER_TIMER_EVENT_SRC;

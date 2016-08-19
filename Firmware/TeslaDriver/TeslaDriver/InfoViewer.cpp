@@ -345,10 +345,6 @@ bool InfoViewer::DisplaySystem(const Event& event, bool initialize)
         uint32_t maxDSPCycles = (CPU_FREQ / g_PWMController.GetModulationSampleRate()) * PWMController::MODULATION_DMA_BUFFER_SIZE;
         g_Display.Printf_P(PSTR("DSP: %04u/%04u %02u/%02u"), g_SystemStats.m_DSPCyclesMin, g_SystemStats.m_DSPCyclesMax, U16(U32(g_SystemStats.m_DSPCyclesMin) * 100 / maxDSPCycles), U16(U32(g_SystemStats.m_DSPCyclesMax) * 100 / maxDSPCycles) );
         g_Display.ClearToEndOfLine();
-    
-        g_Display.SetCursor(0, 2);
-        g_Display.Printf_P(PSTR("WIFI Rcv buf: %d"), g_SystemStats.m_WifiReceiveBufferMax);
-        g_Display.ClearToEndOfLine();
     }        
     return false;
 }

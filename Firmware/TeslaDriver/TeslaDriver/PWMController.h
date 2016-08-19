@@ -28,6 +28,14 @@ struct PWMModulationPair;
 class PWMController
 {
 public:
+    enum FaultFlags_e
+    {
+        e_FaultActive          = 0x01, // Flag set if any of the other flag is set, but must be explicitly cleared.
+        e_FaultOvertemp        = 0x02,
+        e_FaultTempSensorError = 0x04,
+        e_FaultOverCurrent     = 0x08,
+        e_FaultUnderVoltage    = 0x10,
+    };
     static const uint8_t MODULATION_DMA_BUFFER_SIZE = 32;
 
     void Initialize();
@@ -39,6 +47,11 @@ public:
     void     SetDutyCycle(uint16_t dutyCycle);
     uint16_t GetDutyCycle() const;
     
+    bool IsFaulty() const { return m_FaultFlags != 0; }
+    void SetFaultFlags(uint8_t faults);
+    void ClearFaultFlags(uint8_t faults);
+    bool HasFault(uint8_t flags) { return (m_FaultFlags & flags) != 0; }
+    
     void SetDeadTime(uint8_t deadTimeLS, uint8_t deadTimeHS);
     void GetDeadTime(uint8_t* deadTimeLS, uint8_t* deadTimeHS) const;
     
@@ -48,7 +61,7 @@ public:
     uint16_t GetModulationSampleRate() const;
     void     SetModulationScale(uint8_t multiplier, uint8_t rightShifter);
     void     GetModulationScale(uint8_t& multiplier, uint8_t& rightShifter) const;
-    
+    static bool IsModulating();
 private:
     friend void DMA_CH2_vect(void);
     friend void DMA_CH3_vect(void);
@@ -56,6 +69,9 @@ private:
     void SetupModulationDMAChannel(DMA_CH_t& channel, volatile PWMModulationPair* srcAddr, volatile uint16_t* pwmRegister);
 
 //    void ScaleModulationData(uint16_t* dstLS, uint16_t* dstHS, const uint8_t* data, int16_t size);
+    
+    
+    uint8_t m_FaultFlags = 0;
     
     uint16_t m_ModulationSampleRate = 22050;
     

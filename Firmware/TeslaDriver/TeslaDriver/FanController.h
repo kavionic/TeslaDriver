@@ -35,11 +35,14 @@ public:
 private:
     static const uint16_t TEMP_MIN = 30 << DS18B20::TEMP_FRACTION_BITS;
     static const uint16_t TEMP_MAX = 55 << DS18B20::TEMP_FRACTION_BITS;
+    static const uint16_t TEMP_ERROR_LO = 55 << DS18B20::TEMP_FRACTION_BITS;
+    static const uint16_t TEMP_ERROR_HI = 60 << DS18B20::TEMP_FRACTION_BITS;
+    
     int16_t m_TargetFanSpeed[e_FanCount];
     int16_t m_CurrentFanSpeed[e_FanCount];
     uint32_t m_PrevUpdateTime;
-    int16_t  m_PrevError;
-    int32_t  m_IntegralError;
+    int16_t  m_PrevError[e_FanCount];
+    int32_t  m_IntegralError[e_FanCount];
 };
 
 extern FanController g_FanController;

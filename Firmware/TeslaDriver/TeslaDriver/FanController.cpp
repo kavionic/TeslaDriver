@@ -21,6 +21,7 @@
 #include <avr/interrupt.h>
 
 #include "FanController.h"
+#include "PWMController.h"
 #include "Hardware.h"
 #include "EventSys.h"
 
@@ -95,6 +96,7 @@ void FanController::Initialize()
     
     FAN_PWM_TIMER.CTRLA = TC_CLKSEL_DIV1_gc;
     
+    DigitalPort::InvertPins(FAN_PWM_PORT, FAN_PWM1_PIN | FAN_PWM2_PIN);
     DigitalPort::SetAsOutput(FAN_PWM_PORT, FAN_PWM1_PIN | FAN_PWM2_PIN);
 }
 
@@ -118,6 +120,7 @@ public:
 private:    
     uint32_t m_StartTimer;
 };
+
 void FanController::Run(const Event& event)
 {
     
@@ -131,43 +134,54 @@ void FanController::Run(const Event& event)
     
     
     uint32_t time = Clock::GetTime();
-    
+    uint8_t deltaTime = time - m_PrevUpdateTime;
     //static const uint16_t deltaTime = 2;
-    if ( (time - m_PrevUpdateTime) > 8)
-//    if (event.type == EventID::e_TimeTick100)
+    static int8_t currentFan = 0;
+    
+    if ( deltaTime > 4)
     {
         uint16_t temp1 = DS18B20::GetTemp1();
         uint16_t temp2 = DS18B20::GetTemp2();
         uint16_t temp = max(temp1, temp2);
         
-        int16_t targetRPM;
-        if (temp < TEMP_MIN)
-        {
+        uint16_t targetRPM = 4000;
+        if (temp < TEMP_MIN) {
             targetRPM = 0;
-        } else if ( temp > TEMP_MAX) {
+        } else if (temp > TEMP_MAX) {
             targetRPM = 4000;
         } else {
             targetRPM = 1200 + U32(4000 - 1200) * (temp - TEMP_MIN) / (TEMP_MAX - TEMP_MIN);
         }
+        if (g_PWMController.HasFault(PWMController::e_FaultOvertemp)) {
+            if (temp < TEMP_ERROR_LO) {
+                g_PWMController.ClearFaultFlags(PWMController::e_FaultOvertemp);
+            }            
+        } else {
+            if (temp >= TEMP_ERROR_HI) {
+                g_PWMController.SetFaultFlags(PWMController::e_FaultOvertemp);
+            }                
+        }            
         
 //        volatile PerfTimer perfTimer;
         m_PrevUpdateTime = time;
+        int8_t i = currentFan & 0x1;
+        currentFan++;
 //        for (int i = 0 ; i < e_FanCount; ++i)
         {
             const int16_t KP = 2;
             const int16_t KI = 20;
             const int16_t KD = 8;
-            int16_t rpm = GetRPM(0);
+            int16_t rpm = GetRPM(i);
             int16_t error = targetRPM - rpm;
 //            int16_t absError = (error >= 0) ? error : -error;
-            m_IntegralError = clamp<int32_t>(-50000, 50000, m_IntegralError + error);
+            m_IntegralError[i] = clamp<int32_t>(-50000, 50000, m_IntegralError[i] + error);
 //            int16_t derivative = (absError < 100) ? (error - m_PrevError) : 0;
-            int16_t derivative = error - m_PrevError;
+            int16_t derivative = error - m_PrevError[i];
 
-            int32_t output = clamp<int32_t>(0, FAN_PWM_PERIOD, error * KP + m_IntegralError / KI  + derivative * KD + FAN_PWM_PERIOD / 2);
-            m_PrevError = error;
+            int32_t output = clamp<int32_t>(0, FAN_PWM_PERIOD, error * KP + m_IntegralError[i] / KI  + derivative * KD + FAN_PWM_PERIOD / 2);
+            m_PrevError[i] = error;
             
-/*            printf_P(PSTR("%04d, %04d, %ld, %03d, %04ld  "), rpm, error, m_IntegralError, derivative, output);
+/*            printf_P(PSTR("%04d, %04d, %ld, %03d, %04ld  "), rpm, error, m_IntegralError[i], derivative, output);
             
             int16 pError = error / 8;
             for (int8_t i = -75; i <= 75; ++i) {
@@ -187,23 +201,11 @@ void FanController::Run(const Event& event)
                 }
             }
             printf_P(PSTR("\n"));*/
-            FAN_PWM_TIMER.CCABUF = output; // clamp<int32_t>(0, FAN_PWM_PERIOD, output);
-/*            int32_t absDelta = (delta >= 0) ? delta : -delta;
-            int8_t error = clamp<int16_t>(-127, 127, (delta * absDelta) / 5000);
-            
-            if (error < 0 && -error > FAN_PWM_TIMER.CCABUF) {
-                FAN_PWM_TIMER.CCABUF = 0;
-            } else if (error > 0 && error + FAN_PWM_TIMER.CCABUF >= FAN_PWM_PERIOD) {
-                FAN_PWM_TIMER.CCABUF = FAN_PWM_PERIOD;
+            if (i == 0) {
+                FAN_PWM_TIMER.CCABUF = output;
             } else {
-                FAN_PWM_TIMER.CCABUF += error;
-            }*/
-/*            
-            if (rpm < 1500) {
-                if (FAN_PWM_TIMER.CCABUF < FAN_PWM_PERIOD) FAN_PWM_TIMER.CCABUF++;
-            } else if (rpm > 1500) {
-                if (FAN_PWM_TIMER.CCABUF > 0) FAN_PWM_TIMER.CCABUF--;
-            }                */
+                FAN_PWM_TIMER.CCBBUF = output;                
+            }                
         }
     }
 }

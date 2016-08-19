@@ -371,14 +371,16 @@ void TeslaTuner::ProcessResponse()
 
 void TeslaTuner::SlotRefreshTimer()
 {
-/*    if (m_IsStatusUpdatePending && m_TimeSincePWMStatusRequest.elapsed() > 1000) {
+    if (m_IsStatusUpdatePending && m_TimeSincePWMStatusRequest.elapsed() > 1000) {
         //m_IsRadioStatusUpdatePending = false;
         //m_IsRadioStatusValid = false;
         m_IsStatusUpdatePending = false;
         //m_IsPWMStatusValid = false;
-        //m_DeviceSocket.disconnectFromHost();
-        RequestPWMStatus();
-    }*/
+        m_DeviceSocket.disconnectFromHost();
+        m_DeviceSocket.abort();
+
+        //RequestPWMStatus();
+    }
     if (m_DeviceSocket.state() == QAbstractSocket::UnconnectedState)
     {
 //        m_DeviceSocket.connectToHost("192.168.1.149", 42);
@@ -587,7 +589,7 @@ void TeslaTuner::SlotVolumeSliderChanged(int value)
     WifiSetPWMModulationScale msg;
     WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_SetPWMModulationScale);
 
-    double scale = double(m_PWMStatus.m_PWMPeriode) * double(value) / (255.0*255.0);
+    double scale = double(m_PWMStatus.m_PWMPeriode) * double(value) / (32.0*255.0);
 
     double smallestError = std::numeric_limits<double>::max();
     for (int shifter = 0 ; shifter < 16 ; ++shifter)
@@ -851,7 +853,7 @@ void TeslaTuner::UpdatePWMStatusView()
 
             m_SampleRateSlider->setValue(m_PWMStatus.m_ModulationSampleRate);
             double scale = double(m_PWMStatus.m_ModulationMultiplier) / double(1<<m_PWMStatus.m_ModulationShifter);
-            int volume = scale * (255.0*255.0) / double(m_PWMStatus.m_PWMPeriode) + 0.5;
+            int volume = scale * (32.0*255.0) / double(m_PWMStatus.m_PWMPeriode) + 0.5;
             m_VolumeSlider->setValue(volume);
 
             EnableControls(true);

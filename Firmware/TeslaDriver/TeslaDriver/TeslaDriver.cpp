@@ -237,8 +237,8 @@ int main(void)
     
 
     // Set the TxD pin as an output - set PORTC OUT register bit 3 to 1
-    PORTD.DIRSET = PIN3_bm;
-
+    //PORTE.DIRSET = PIN3_bm;
+    DigitalPort::SetAsOutput(DEBUG_USART_PORT, DEBUG_USART_OUT_PIN);
     // Set baud rate & frame format
     DEBUG_USART.BAUDCTRLB = ((-3) << USART_BSCALE_gp) & USART_BSCALE_gm; ///*USART_BSCALE3_bm | USART_BSCALE2_bm | */ USART_BSCALE1_bm | USART_BSCALE0_bm; // BSCALE = 3
     DEBUG_USART.BAUDCTRLA = 131 << USART_BSEL_gp;
@@ -312,6 +312,7 @@ int main(void)
     sei();
 
     g_WifiDevice.Initialize(false);
+    Beeper::Beep(BeepID::e_KeyPress);
     
     g_WifiDevice.RegisterSocket(0, &g_NetIF);
     g_WifiDevice.RegisterSocket(1, &g_NetIF);
@@ -327,7 +328,7 @@ int main(void)
     
     uint32_t prevFrameTime = 0;
     int32_t averageFrameTime = 0;
-    while(1)
+   while(1)
     {
         Event event;
         
@@ -353,7 +354,7 @@ int main(void)
         int32 v2 = ADCA.CH1.RES;
         
         static const int32 PREC = 1000;
-        v1 = I32(v1) * PREC * 21000 / 1000 / 2047;
+        v1 = I32(v1) * PREC * 7800 / 1000 / 2047;
         v2 = I32(v2) * PREC * 21000 / 1000 / 2047;
         
 //        printf_P(PSTR("%d.%03d/%d.%03d\n"), I16(v1 / PREC), I16(v1 % PREC), I16(v2 / PREC), I16(v2 % PREC));
@@ -389,7 +390,6 @@ int main(void)
         //g_SystemStats.m_CyclesPerFrame -= 10;
         if (event.type == EventID::e_TimeTick500) {
             g_SystemStats.m_CyclesPerFrameMax = deltaTime;
-            g_SystemStats.m_WifiReceiveBufferMax = g_SystemStats.m_WifiReceiveBufferPrev;
             g_SystemStats.m_DSPCyclesMin = g_SystemStats.m_DSPCyclesMax = g_SystemStats.m_DSPCyclesPrev;
         } else if (deltaTime > g_SystemStats.m_CyclesPerFrameMax) {
             g_SystemStats.m_CyclesPerFrameMax = deltaTime;

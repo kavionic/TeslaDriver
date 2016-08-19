@@ -35,11 +35,11 @@
 //  PORTD
 //   -PIN0(26)  : FAN1 PWM
 //   -PIN1(27)  : FAN2 PWM
-//   -PIN2(28)  : Debug RXD
-//   -PIN3(29)  : Debug TXD
 //  PORTE
 //   -PIN0(36)  : FAN1 RPM
 //   -PIN1(37)  : FAN2 RPM
+//   -PIN2(38)  : Debug RXD
+//   -PIN3(39)  : Debug TXD
 //  PORTF
 //   -PIN0(46)  : Temp sensor1
 //   -PIN1(47)  : Temp sensor2
@@ -81,9 +81,9 @@
 // USART:
 //  USARTC0
 //  USARTC1
-//  USARTD0 : Debugging.
+//  USARTD0
 //  USARTD1
-//  USARTE0
+//  USARTE0 : Debugging.
 //  USARTE1
 //  USARTF0 : WIFI
 
@@ -131,8 +131,8 @@
 
 /// Debug serial interface ////////////////////////////////////////////////////
 
-#define DEBUG_USART USARTD0
-#define DEBUG_USART_PORT e_DigitalPortID_D
+#define DEBUG_USART USARTE0
+#define DEBUG_USART_PORT e_DigitalPortID_E
 #define DEBUG_USART_IN_PIN   PIN2_bm
 #define DEBUG_USART_OUT_PIN  PIN3_bm
 
@@ -205,6 +205,9 @@
 
 #define WIFI_RADIO_RESET_PORT e_DigitalPortID_F
 #define WIFI_RADIO_RESET_PIN  PIN5_bm
+
+#define WIFI_RADIO_FLASHEN_PORT e_DigitalPortID_D
+#define WIFI_RADIO_FLASHEN_PIN  PIN3_bm
 
 #define WIFI_USART USARTF0
 #define WIFI_USART_RX_INT USARTF0_RXC_vect

@@ -36,6 +36,7 @@ static uint8_t g_ModulationBuffer[PWM_MODULATION_BUFFER_SIZE];
 static volatile int16_t g_ModulationBufferBytesAvailable;
 static volatile int16_t g_ModulationBufferInPos;
 static volatile int16_t g_ModulationBufferOutPos;
+static volatile int16_t g_LastModulationBufferSample;
 
 struct PWMModulationPair
 {
@@ -50,6 +51,7 @@ static uint8_t  g_ModulationMultiplier = 157;
 static uint8_t  g_ModulationShifter = 7;
 static uint16_t g_DutyCycle;
 static uint16_t g_PWMThreshold;
+static uint16_t g_PWMMinThreshold;
 static int16_t g_PWMModulationCenter;
 
 #define DMA_CHANNEL_CTRL (DMA_CH_REPEAT_bm | DMA_CH_SINGLE_bm | DMA_CH_BURSTLEN_4BYTE_gc)
@@ -63,11 +65,18 @@ static inline void ScaleModulationData(PWMModulationPair* dst, const uint8_t* da
     for (int16_t i = 0 ; i < size ; ++i)
     {
         int16_t sample = (uint16_t(data[i] * g_ModulationMultiplier) >> g_ModulationShifter) + g_PWMModulationCenter;
-        if (sample < 0 ) {
-            sample = 0;
+        if (sample < I16(g_PWMMinThreshold)) {
+            sample = g_PWMMinThreshold;
         } else if ( sample > maxVal ) {
              sample = maxVal;
         }
+        int16_t delta = sample - g_LastModulationBufferSample;
+        if (delta > 2) {
+            sample = g_LastModulationBufferSample + 2;
+        } else if (delta < -2) {
+            sample = g_LastModulationBufferSample - 2;
+        }
+        g_LastModulationBufferSample = sample;
         dst[i].m_Low = sample;
         dst[i].m_High = PWM_TIMER.PERBUF - sample;
     }
@@ -204,7 +213,7 @@ void PWMController::Initialize()
     ADCA.CH0.MUXCTRL = /*ADC_CH_MUXNEG_GND_MODE3_gc |*/ ADC_CH_MUXPOS_PIN5_gc;
 
     ADCA.CH1.CTRL = ADC_CH_INPUTMODE_SINGLEENDED_gc;
-    ADCA.CH1.MUXCTRL = /*ADC_CH_MUXNEG_GND_MODE3_gc |*/ ADC_CH_MUXPOS_PIN5_gc;
+    ADCA.CH1.MUXCTRL = /*ADC_CH_MUXNEG_GND_MODE3_gc |*/ ADC_CH_MUXPOS_PIN6_gc;
         
     EVSYS.CH4CTRL = EVSYS_DIGFILT_1SAMPLE_gc;
     EVSYS.CH4MUX  = PWM_SAMPLE_LO_TRIG;
@@ -256,7 +265,7 @@ void PWMController::Run()
     static bool state = false;
     uint32_t time = Clock::GetTime();
     
-    if ((time - prevUpdateTime) > 1)
+    if ((time - prevUpdateTime) > 10)
     {
         if (state)
         {
@@ -290,20 +299,19 @@ void PWMController::SetupModulationDMAChannel(DMA_CH_t& channel, volatile PWMMod
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-///
+/// Set the PWM counter top value.
 ///////////////////////////////////////////////////////////////////////////////
 
 void PWMController::SetPeriod(uint16_t period)
 {
     g_PWMThreshold = (U32(g_DutyCycle) * period + 65536) >> 17; // / (65535*2);
     g_PWMModulationCenter = g_PWMThreshold - ((127 * g_ModulationMultiplier) >> g_ModulationShifter);
-    
+    g_PWMMinThreshold = period / 20; // Never allow duty cycle between 0% and 10% as it confuses the H-bridge.
     PWM_TIMER.PERBUF            = period;
     PWM_TIMER.PWM_CMP_HI_SAMPLE = period;    // We use CCA to detect underflow and CCB to detect overflow for current measurements.
     
     PWM_TIMER.PWM_CMP_LO_PWM = g_PWMThreshold;
     PWM_TIMER.PWM_CMP_HI_PWM = PWM_TIMER.PER - g_PWMThreshold;
-    
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -313,10 +321,10 @@ void PWMController::SetPeriod(uint16_t period)
 uint16_t PWMController::GetPeriod() const
 {
     return PWM_TIMER.PERBUF;
-}    
+}
 
 ///////////////////////////////////////////////////////////////////////////////
-///
+/// Set PWM duty cycle. Input between 0x0000 (0%) and 0xffff (100%)
 ///////////////////////////////////////////////////////////////////////////////
     
 void PWMController::SetDutyCycle(uint16_t dutyCycle)
@@ -325,11 +333,17 @@ void PWMController::SetDutyCycle(uint16_t dutyCycle)
     
 //    uint16_t pwm = U32(dutyCycle) * PWM_TIMER.PERBUF / (65535*2);
     g_PWMThreshold = (U32(dutyCycle) * PWM_TIMER.PERBUF + 65536) >> 17; // / (65535*2);
+    if (g_PWMThreshold != 0 && g_PWMThreshold < g_PWMMinThreshold) {
+        g_PWMThreshold = g_PWMMinThreshold;
+    }
     g_PWMModulationCenter = g_PWMThreshold - ((127 * g_ModulationMultiplier) >> g_ModulationShifter);
     
-//    printf_P(PSTR("Set duty cycle: %u / %u / %u\n"), dutyCycle, pwm, PWM_TIMER.PERBUF);
-    PWM_TIMER.PWM_CMP_LO_PWM = g_PWMThreshold;
-    PWM_TIMER.PWM_CMP_HI_PWM = PWM_TIMER.PERBUF - g_PWMThreshold;
+    cli();
+    if (!IsModulating() && !IsFaulty()) {
+        PWM_TIMER.PWM_CMP_LO_PWM = g_PWMThreshold;
+        PWM_TIMER.PWM_CMP_HI_PWM = PWM_TIMER.PERBUF - g_PWMThreshold;
+    }
+    sei();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -339,6 +353,36 @@ void PWMController::SetDutyCycle(uint16_t dutyCycle)
 uint16_t PWMController::GetDutyCycle() const
 {
     return g_DutyCycle;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// Sets any flags mentioned in 'faults' plus the e_FaultActive flag.
+///////////////////////////////////////////////////////////////////////////////
+
+void PWMController::SetFaultFlags(uint8_t faults)
+{
+    bool wasFaulty = IsFaulty();
+    m_FaultFlags |= faults; // | e_FaultActive;
+    if (wasFaulty != IsFaulty())
+    {
+        PWM_TIMER.PWM_CMP_LO_PWM = 0;
+        PWM_TIMER.PWM_CMP_HI_PWM = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void PWMController::ClearFaultFlags(uint8_t faults)
+{
+    bool wasFaulty = IsFaulty();
+    m_FaultFlags &= U8(~faults);
+    if (wasFaulty != IsFaulty())
+    {
+        PWM_TIMER.PWM_CMP_LO_PWM = g_PWMThreshold;
+        PWM_TIMER.PWM_CMP_HI_PWM = PWM_TIMER.PERBUF - g_PWMThreshold;
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -395,10 +439,11 @@ int16_t PWMController::WriteModulationData(const uint8_t* data, int16_t size)
     }
     cli();
     g_ModulationBufferBytesAvailable += size;
-    bool restart = g_ModulationBufferBytesAvailable && PWM_MODULATION_TIMER.CTRLA == 0;
+    bool restart = g_ModulationBufferBytesAvailable && !IsModulating();
     sei();
     if (restart)
     {
+        g_LastModulationBufferSample = g_PWMThreshold;
         FillDMABuffers(0);
         FillDMABuffers(1);
         DMA.CH0.CTRLA = DMA_CH_ENABLE_bm | DMA_CHANNEL_CTRL;
@@ -448,4 +493,13 @@ void PWMController::GetModulationScale( uint8_t& multiplier, uint8_t& rightShift
 {
     multiplier   = g_ModulationMultiplier;
     rightShifter = g_ModulationShifter;    
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+bool PWMController::IsModulating()
+{
+    return PWM_MODULATION_TIMER.CTRLA != 0;
 }
