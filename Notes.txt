@@ -1,4 +1,10 @@
 
-Heatsink rib spacing:      6,49mm
-Transistor spacing:       25,96mm
-Total transistor spacing: 77,88mm
+Heatsink rib spacing:      6.49mm
+Heatsink rib thickness:    1.00mm
+Transistor spacing:       25.96mm
+Total transistor spacing: 77.88mm
+
+Heatsink drill hole, distance from bottom: 10.5mm
+Heatsink drill hole 1: 6.49*2.5 + 1.0/2 = 16.725
+Heatsink drill hole 8: 6.49*8.5 + 1.0/2 = 55.665
+
