@@ -48,7 +48,7 @@ namespace BeepID
 
 struct EEPROMContent
 {
-    static const uint8_t VERSION = 1;
+    static const uint8_t VERSION = 2;
     struct Global
     {
         uint8_t        m_Version;
