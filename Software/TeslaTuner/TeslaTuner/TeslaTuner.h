@@ -27,6 +27,17 @@
 
 #include "ui_TeslaTuner.h"
 
+
+struct DeviceInfo
+{
+    WifiBootMode_e m_CurrentBootMode   = WifiBootMode_e::e_Application;
+    WifiBootMode_e m_PreferredBootMode   = WifiBootMode_e::e_Application;
+    int32_t        m_NetworkBufferSize = 0;
+    uint32_t       m_FlashPageSize     = 0;
+    uint32_t       m_FlashStartAddress = 0;
+    uint32_t       m_FlashSize         = 0;
+};
+
 class TeslaTuner : public QMainWindow, public Ui::TeslaTunerClass
 {
     Q_OBJECT
@@ -37,6 +48,7 @@ public:
 
     virtual void closeEvent(QCloseEvent* event) override;
 
+    static const DeviceInfo& GetDeviceInfo() { return s_DeviceInfo; }
 private slots:
     void SlotConnectionStateChanged(QAbstractSocket::SocketState state);
     void SlotAudioPlayerStateChanged(AudioPlayer::State_e state);
@@ -59,12 +71,14 @@ private slots:
     void UpdateDeadTimeLSSliderValue();
     void UpdateDeadTimeHSSliderValue();
 
+    void SlotCurrentLimitLowSliderChanged(int value);
+    void SlotCurrentLimitHighSliderChanged(int value);
+
+    void UpdateCurrentLimitLowSliderValue();
+    void UpdateCurrentLimitHighSliderValue();
+
     void SlotTemperatureResolutionSliderChanged(int value);
     void UpdateTemperatureResolutionValue();
-
-    void SlotDeviceAddressSelected(int index);
-    void SlotDevicePortChanged();
-    void SlotConnectCheckBoxChanged();
 
 
     void SlotVolumeSliderChanged(int value);
@@ -89,18 +103,15 @@ private:
     void UpdatePWMStatusView();
     void ProcessResponse();
 
+    static DeviceInfo s_DeviceInfo;
+
     QTcpSocket m_DeviceSocket;
     QTimer     m_RefreshTimer;
-    QElapsedTimer m_TimeSincePingSent;
+    QElapsedTimer m_TimeSinceSystemInfoRequest;
     QElapsedTimer m_TimeSincePWMStatusRequest;
-    QElapsedTimer m_TimeSinceRadioStatusRequest;
     QElapsedTimer m_TimeSinceModulationSent;
     uint64_t      m_ModulationSendTime = 0;
-    int64_t       m_Latency;
     double        m_ModulationBitrate = 0.0;
-    bool                  m_IsPingPending = false;
-    bool                  m_IsRadioStatusUpdatePending = false;
-    bool                  m_IsRadioStatusValid = false;
     bool                  m_IsStatusUpdatePending = false;
     bool                  m_IsPWMStatusValid = false;
     bool                  m_UpdateSliders = false; // Set to true when connection established and to false on the first update from the device.
@@ -113,6 +124,9 @@ private:
     {
         char                    m_Buffer[1];
         WifiPackageHeader       m_Header;
+        WifiSetVal16            m_SetVal16;
+        WifiSetVal32            m_SetVal32;
+        WifiGetSystemInfoReply  m_GetSystemInfoReply;
         WifiGetRadioStatusReply m_GetRadioStatusReply;
         WifiGetPWMStatusReply   m_GetPWMStatusReply;
     } m_ResponsePackages;

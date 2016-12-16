@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "Config.h"
+#include "WifiProtocol.h"
 
 EEPROMContent g_EEPROMunmapped EEMEM;
 EEPROMContent& g_EEPROM = *((EEPROMContent*)MAPPED_EEPROM_START);
@@ -33,7 +34,7 @@ void Config::ResetConfig()
 {
     // Global:
     eeprom_update_byte(&g_EEPROMunmapped.global.m_Version, EEPROMContent::VERSION);
-    eeprom_update_byte(&g_EEPROMunmapped.global.m_StandbyState, 0);
+    eeprom_update_byte(&g_EEPROMunmapped.global.m_PreferredBootMode, U8(WifiBootMode_e::e_Application));
     
     // Sound:
     eeprom_update_word(&g_EEPROMunmapped.sound.m_Frequency, 1000);
@@ -83,7 +84,6 @@ void Config::ResetConfig()
     UpdateByte(&g_EEPROMunmapped.wifi.m_HotspotEncryption, WifiSecurityMode_e::e_OPEN);
     UpdateBool(&g_EEPROMunmapped.wifi.m_HotspotHidden, false);
     
-
     MapEEPROM();
 }
 

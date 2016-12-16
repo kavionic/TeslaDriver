@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
+#include <alloca.h>
 
 #include "Hardware.h"
 
@@ -38,12 +39,18 @@
 
 #include "Misc/SpinTimer.cpp"
 #include "Misc/Clock.cpp"
-#include "Misc/Display.cpp"
+//#include "Misc/Display.cpp"
 #include "Misc/Utils.cpp"
+#include "Misc/PString.cpp"
+#include "Misc/PString.h"
+//#include "Misc/Display.cpp"
 #include "ESP8266/ESP8266.cpp"
+#include "Config.cpp"
+#include "BootNetIF.h"
 
-
+//DisplayLCD    g_Display;
 ESP8266       g_WifiDevice;
+BootNetIF     g_BootNetIF;
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
@@ -117,26 +124,32 @@ ISR(TCE0_OVF_vect)
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-static int uart_putchar(char c, FILE *stream)
+void DebugLogWriter::Write( char c )
 {
-    if (c == '\n')
-    uart_putchar('\r', stream);
-    
     // Wait for the transmit buffer to be empty
     while ( !( DEBUG_USART.STATUS & USART_DREIF_bm) );
     
     // Put our character into the transmit buffer
     DEBUG_USART.DATA = c;
-    
-    return 0;
 }
 
 
 int main(void)
 {
+    PWM_OUT_PORT->OUTCLR = PWM_OUT_PINS;
+    PWM_OUT_PORT->DIRSET = PWM_OUT_PINS;
+    
+    if (WifiBootMode_e(eeprom_read_byte(&g_EEPROMunmapped.global.m_PreferredBootMode)) == WifiBootMode_e::e_Application  /*(RST.STATUS & RST_SRF_bm) == 0*/ && pgm_read_word_near(0) != 0xffff) {
+        asm("jmp 0");
+    }
+    RST.STATUS |= RST_PORF_bm | RST_EXTRF_bm | RST_BORF_bm | RST_WDRF_bm | RST_PDIRF_bm | RST_SRF_bm | RST_SDRF_bm;
+
     SetupClock();
-       
-    NVM.CTRLB = NVM_EEMAPEN_bm; // Map EEPROM into MAPPED_EEPROM_START
+
+    DigitalPort::InvertPins(FAN_PWM_PORT, FAN_PWM1_PIN | FAN_PWM2_PIN);
+    DigitalPort::SetAsOutput(FAN_PWM_PORT, FAN_PWM1_PIN | FAN_PWM2_PIN);
+
+//    NVM.CTRLB = NVM_EEMAPEN_bm; // Map EEPROM into MAPPED_EEPROM_START
     
        
     SYSTEM_TIMER.INTCTRLA = TC_OVFINTLVL_MED_gc;
@@ -145,7 +158,6 @@ int main(void)
     SYSTEM_TIMER.PERBUF = CLOCK_CPUCYCLES_PER_UPDATE - 1; //  CPU_FREQ / 1000;
     SYSTEM_TIMER.CTRLA = TC_CLKSEL_DIV1_gc;
        
-    PMIC.CTRL |= PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm;
 
     // Set the TxD pin as an output - set PORTC OUT register bit 3 to 1
     //PORTE.DIRSET = PIN3_bm;
@@ -161,15 +173,23 @@ int main(void)
     // Enable receiver and transmitter.
     DEBUG_USART.CTRLB = USART_RXEN_bm | USART_TXEN_bm;
 
-    static FILE mystdout;
-    fdev_setup_stream(&mystdout, uart_putchar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &mystdout;
+    CCP = CCP_IOREG_gc;
+    PMIC.CTRL = PMIC_RREN_bm | PMIC_LOLVLEN_bm | PMIC_MEDLVLEN_bm | PMIC_HILVLEN_bm | PMIC_IVSEL_bm;
+    sei();
 
-    CPU_RAMPZ = 0x04;
-    printf("Hello world: (%c)\n", pgm_read_byte(PSTR("Hello world!\n")));
-//    printf("Hello world: (%c)\n", pgm_read_byte_far(int32(PSTR("Hello world!\n")) | 0x20000));
-    //printf_P((const char*) uint16_t(PSTR("Hello world!\n")));
+
+//    g_Display.InitializeDisplay();
+//    g_Display.EnableDisplay(true);
+
+    g_WifiDevice.Initialize(false);
+    g_BootNetIF.ReconfigureRadio();
+
     while(1)
     {
+        if ( !g_WifiDevice.Run()){
+            DB_LOG(DP_ERROR, PSTR("ERROR: ESP8266::Run() failed! Restarting radio.\n"));
+            g_BootNetIF.ReconfigureRadio();
+       }
+        g_BootNetIF.Run();
     }
 }

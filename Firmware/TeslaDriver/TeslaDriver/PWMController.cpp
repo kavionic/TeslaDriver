@@ -36,7 +36,7 @@ static uint8_t g_ModulationBuffer[PWM_MODULATION_BUFFER_SIZE];
 static volatile int16_t g_ModulationBufferBytesAvailable;
 static volatile int16_t g_ModulationBufferInPos;
 static volatile int16_t g_ModulationBufferOutPos;
-static volatile int16_t g_LastModulationBufferSample;
+//static volatile int16_t g_LastModulationBufferSample;
 
 struct PWMModulationPair
 {
@@ -52,6 +52,7 @@ static uint8_t  g_ModulationShifter = 7;
 static uint16_t g_DutyCycle;
 static uint16_t g_PWMThreshold;
 static uint16_t g_PWMMinThreshold;
+//static int16_t g_PWMMaxSampleDelta;
 static int16_t g_PWMModulationCenter;
 
 #define DMA_CHANNEL_CTRL (DMA_CH_REPEAT_bm | DMA_CH_SINGLE_bm | DMA_CH_BURSTLEN_4BYTE_gc)
@@ -70,13 +71,13 @@ static inline void ScaleModulationData(PWMModulationPair* dst, const uint8_t* da
         } else if ( sample > maxVal ) {
              sample = maxVal;
         }
-        int16_t delta = sample - g_LastModulationBufferSample;
-        if (delta > 2) {
-            sample = g_LastModulationBufferSample + 2;
-        } else if (delta < -2) {
-            sample = g_LastModulationBufferSample - 2;
+/*        int16_t delta = sample - g_LastModulationBufferSample;
+        if (delta > g_PWMMaxSampleDelta) {
+            sample = g_LastModulationBufferSample + g_PWMMaxSampleDelta;
+        } else if (delta < -g_PWMMaxSampleDelta) {
+            sample = g_LastModulationBufferSample - g_PWMMaxSampleDelta;
         }
-        g_LastModulationBufferSample = sample;
+        g_LastModulationBufferSample = sample;*/
         dst[i].m_Low = sample;
         dst[i].m_High = PWM_TIMER.PERBUF - sample;
     }
@@ -179,30 +180,47 @@ ISR(DMA_CH1_vect)
     }
 }
 
+    static uint8_t timerUpdateCmd = (0x01<<2); // TC_TC0_CMD_UPDATE_gc;
+
 ///////////////////////////////////////////////////////////////////////////////
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
 void PWMController::Initialize()
 {
+    DigitalPort::SetLow(PWM_OUT_PORT, PWM_HIGH_PINS);
+    DigitalPort::SetHigh(PWM_OUT_PORT, PWM_LOW_PINS);
+    DigitalPort::SetAsOutput(PWM_OUT_PORT, PWM_OUT_PINS);
+    PWM_OUT_PORT->PIN0CTRL = PORT_ISC_FALLING_gc;
+    PWM_OUT_PORT->PIN3CTRL = PORT_ISC_FALLING_gc;
+    
     // Setup timer
-    PWM_TIMER.CTRLB = TC0_CCAEN_bm | TC0_CCBEN_bm | TC0_CCCEN_bm | TC0_CCDEN_bm | TC_WGMODE_DSBOTH_gc;
+    PWM_TIMER.CTRLB = TC0_CCAEN_bm | TC0_CCBEN_bm | TC0_CCCEN_bm /*| TC0_CCDEN_bm*/ | TC_WGMODE_DSBOTH_gc;
 
     // Setup waveform generator:
 
-    //EVSYS.CH2MUX = EVSYS_CHMUX_PORTD_PIN1_gc;
-    //    EVSYS.CH2CTRL = EVSYS_DIGFILT_8SAMPLES_gc;
+    EVSYS.CH2MUX = EVSYS_CHMUX_ACB_WIN_gc;
+    EVSYS.CH2CTRL = EVSYS_DIGFILT_1SAMPLE_gc;
 	
     AWEXC.CTRL = PWM_AWEX_CHANNELS;
     AWEXC.OUTOVEN = PWM_OUT_PINS;
-    AWEXC.DTLSBUF = 1;
-    AWEXC.DTHSBUF = 1;
-    //AWEXC.FDEMASK = PWM_FAULT_EVENTS; // Event 2 = fault
-    //AWEXC.FDCTRL = AWEX_FDACT_CLEAROE_gc | AWEX_FDMODE_bm;
+    AWEXC.DTLSBUF = 4;
+    AWEXC.DTHSBUF = 4;
+    AWEXC.FDEMASK = PWM_FAULT_EVENTS; // Event 2 = fault
+    AWEXC.FDCTRL = AWEX_FDACT_CLEAROE_gc; // | AWEX_FDMODE_bm;
 	
     HIRESC.CTRLA = HIRES_HREN0_bm | BIT(2,1);
 	
-        
+    
+    PORTA.PIN5CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    PORTA.PIN6CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    PORTA.PIN7CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    
+    PORTB.PIN2CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    PORTB.PIN3CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    PORTB.PIN4CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    PORTB.PIN5CTRL = PORT_ISC_INPUT_DISABLE_gc;
+    
     ADCA.CTRLA = ADC_ENABLE_bm;
     ADCA.CTRLB = ADC_CONMODE_bm;
     ADCA.REFCTRL = ADC_REFSEL_INT1V_gc | ADC_BANDGAP_bm | ADC_TEMPREF_bm;
@@ -214,7 +232,37 @@ void PWMController::Initialize()
 
     ADCA.CH1.CTRL = ADC_CH_INPUTMODE_SINGLEENDED_gc;
     ADCA.CH1.MUXCTRL = /*ADC_CH_MUXNEG_GND_MODE3_gc |*/ ADC_CH_MUXPOS_PIN6_gc;
-        
+
+    ADCB.CTRLA = ADC_ENABLE_bm;
+    ADCB.CTRLB = ADC_IMPMODE_bm | ADC_CONMODE_bm;
+    ADCB.REFCTRL = ADC_REFSEL_INT1V_gc | ADC_BANDGAP_bm | ADC_TEMPREF_bm;
+    ADCB.EVCTRL  = ADC_EVSEL_4567_gc | ADC_EVACT_CH01_gc;
+    ADCB.PRESCALER = ADC_PRESCALER_DIV16_gc;
+    
+    ADCB.CH0.CTRL = ADC_CH_INPUTMODE_DIFFWGAIN_gc | ADC_CH_GAIN_1X_gc;
+    ADCB.CH0.MUXCTRL = ADC_CH_MUXNEG_PIN5_gc | ADC_CH_MUXPOS_PIN10_gc;
+
+    ADCB.CH1.CTRL = ADC_CH_INPUTMODE_DIFFWGAIN_gc | ADC_CH_GAIN_1X_gc;
+    ADCB.CH1.MUXCTRL = ADC_CH_MUXNEG_PIN5_gc | ADC_CH_MUXPOS_PIN10_gc;
+
+    DACB.CTRLA = DAC_IDOEN_bm | DAC_CH1EN_bm | DAC_ENABLE_bm;
+    DACB.CTRLB = DAC_CHSEL_DUAL_gc;
+    DACB.CTRLC = DAC_REFSEL_AVCC_gc;
+    DACB.CH0DATA = 3.3/4095.0 * (0.5 - 50e-3) + 0.5;
+    DACB.CH1DATA = 3.3/4095.0 * (0.5 + 50e-3) + 0.5;
+//    DACB.CH1DATA = 2048 + 1024;
+    
+    
+//    ACB.AC0MUXCTRL = AC_MUXNEG_SCALER_gc | AC_MUXPOS_PIN2_gc;
+    ACB.AC0MUXCTRL = AC_MUXNEG_PIN3_gc | AC_MUXPOS_PIN2_gc;
+    ACB.AC1MUXCTRL = AC_MUXNEG_DAC_gc | AC_MUXPOS_PIN2_gc;
+    
+//    ACB.CTRLB = 3.3/(0.5 + 50e-3) - 1;
+    ACB.WINCTRL = AC_WEN_bm | AC_WINTMODE_OUTSIDE_gc;
+
+    ACB.AC0CTRL = AC_ENABLE_bm | AC_HSMODE_bm | AC_HYSMODE_LARGE_gc | AC_INTMODE_BOTHEDGES_gc; // | AC_INTMODE1_bm; // High speed, Large hysteresis, Falling edge
+    ACB.AC1CTRL = AC_ENABLE_bm | AC_HSMODE_bm | AC_HYSMODE_LARGE_gc | AC_INTMODE_BOTHEDGES_gc; // | AC_INTMODE1_bm | AC_INTMODE0_bm; // High speed, Large hysteresis, Rising edge
+
     EVSYS.CH4CTRL = EVSYS_DIGFILT_1SAMPLE_gc;
     EVSYS.CH4MUX  = PWM_SAMPLE_LO_TRIG;
     
@@ -230,9 +278,8 @@ void PWMController::Initialize()
     PWM_TIMER.CCD = PWM_TIMER.CCDBUF;
             
     // Setup pins:
-    PORTD.PIN1CTRL = PORT_ISC_LEVEL_gc | PORT_OPC_PULLUP_gc | PORT_INVEN_bm;
+//    PORTD.PIN1CTRL = PORT_ISC_LEVEL_gc | PORT_OPC_PULLUP_gc | PORT_INVEN_bm;
     //    AWEXC.STATUS |= AWEX_FDF_bm;
-    DigitalPort::SetAsOutput(PWM_OUT_PORT, PWM_OUT_PINS);
     PWM_TIMER.CTRLA = TC_CLKSEL_DIV1_gc;
     
     DMA.CTRL = DMA_ENABLE_bm | DMA_DBUFMODE_CH01_gc | DMA_PRIMODE_RR0123_gc;
@@ -246,7 +293,19 @@ void PWMController::Initialize()
     PWM_MODULATION_EVCH_CTRL = EVSYS_DIGFILT_1SAMPLE_gc;
     
     PWM_MODULATION_TIMER.PERBUF = CPU_FREQ / m_ModulationSampleRate;
-        
+
+    DMA.CH3.TRFCNT    = 1;
+    DMA.CH3.REPCNT    = 0;
+    DMA.CH3.ADDRCTRL  = DMA_CH_SRCDIR_FIXED_gc | DMA_CH_SRCRELOAD_NONE_gc | DMA_CH_DESTDIR_FIXED_gc | DMA_CH_DESTRELOAD_NONE_gc;
+    DMA.CH3.SRCADDR0 = ((intptr_t)&timerUpdateCmd) & 0xff;
+    DMA.CH3.SRCADDR1 = (((intptr_t)&timerUpdateCmd) >> 8) & 0xff;
+    DMA.CH3.SRCADDR2  = 0;
+    DMA.CH3.DESTADDR0  = ((intptr_t)&PWM_TIMER.CTRLFSET) & 0xff;
+    DMA.CH3.DESTADDR1  = (((intptr_t)&PWM_TIMER.CTRLFSET) >> 8) & 0xff;
+    DMA.CH3.DESTADDR2 = 0;
+    DMA.CH3.TRIGSRC   = DMA_CH_TRIGSRC_TCC0_CCC_gc;
+    DMA.CH3.CTRLA     = DMA_CH_ENABLE_bm | DMA_CH_REPEAT_bm | DMA_CH_SINGLE_bm | DMA_CH_BURSTLEN_1BYTE_gc;
+
 /*    for ( int16_t i = 0 ; i < 512 ; ++i ) {
         m_ModulationBufferLS[0][i] = i>>1;
         m_ModulationBufferHS[0][i] = 800 - m_ModulationBufferHS[0][i];
@@ -305,13 +364,16 @@ void PWMController::SetupModulationDMAChannel(DMA_CH_t& channel, volatile PWMMod
 void PWMController::SetPeriod(uint16_t period)
 {
     g_PWMThreshold = (U32(g_DutyCycle) * period + 65536) >> 17; // / (65535*2);
-    g_PWMModulationCenter = g_PWMThreshold - ((127 * g_ModulationMultiplier) >> g_ModulationShifter);
-    g_PWMMinThreshold = period / 20; // Never allow duty cycle between 0% and 10% as it confuses the H-bridge.
-    PWM_TIMER.PERBUF            = period;
-    PWM_TIMER.PWM_CMP_HI_SAMPLE = period;    // We use CCA to detect underflow and CCB to detect overflow for current measurements.
+    g_PWMModulationCenter = g_PWMThreshold - ((127 * g_ModulationMultiplier) >> g_ModulationShifter);    
+    g_PWMMinThreshold = 64; //period / 10; // Never allow duty cycle between 0% and 5% as it confuses the H-bridge.
+//    g_PWMMaxSampleDelta = period / 2;
+    PWM_TIMER.PERBUF    = period;
+    PWM_TIMER.PWM_CMP_MID = period >> 1;    // We use CCC to detect underflow and CCD to detect overflow for current measurements.
     
-    PWM_TIMER.PWM_CMP_LO_PWM = g_PWMThreshold;
-    PWM_TIMER.PWM_CMP_HI_PWM = PWM_TIMER.PER - g_PWMThreshold;
+    if (!IsModulating() && !IsFaulty()) {
+        PWM_TIMER.PWM_CMP_LO_PWM = g_PWMThreshold;
+        PWM_TIMER.PWM_CMP_HI_PWM = PWM_TIMER.PER - g_PWMThreshold;
+    }        
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -409,6 +471,26 @@ void PWMController::GetDeadTime(uint8_t* deadTimeLS, uint8_t* deadTimeHS) const
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
+void PWMController::SetCurrentLimits(uint16_t limitLow, uint16_t limitHigh)
+{
+    DACB.CH0DATA = limitLow;
+    DACB.CH1DATA = limitHigh;    
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+    
+void PWMController::GetCurrentLimits(uint16_t* limitLow, uint16_t* limitHigh) const
+{
+    *limitLow  = DACB.CH0DATA;
+    *limitHigh = DACB.CH1DATA;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
 int16_t PWMController::GetAvaialbleModulationDataSpace() const
 {
     cli();
@@ -443,7 +525,7 @@ int16_t PWMController::WriteModulationData(const uint8_t* data, int16_t size)
     sei();
     if (restart)
     {
-        g_LastModulationBufferSample = g_PWMThreshold;
+//        g_LastModulationBufferSample = g_PWMThreshold;
         FillDMABuffers(0);
         FillDMABuffers(1);
         DMA.CH0.CTRLA = DMA_CH_ENABLE_bm | DMA_CHANNEL_CTRL;

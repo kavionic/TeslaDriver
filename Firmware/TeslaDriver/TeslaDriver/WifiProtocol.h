@@ -23,13 +23,33 @@
 
 enum class WifiCmd_e : uint8_t
 {
-    e_Ping,
-    e_Pong,
-    e_GetRadioStatus,
-    e_GetRadioStatusReply,
-    e_SetPWMDutyCycle,
+    // Shared messages:
+    e_Ping = 0,
+    e_Pong = 1,
+    e_GetSystemInfo = 2,
+    e_GetSystemInfoReply = 3,
+    e_SetPreferredBootMode = 4,
+    e_Reboot = 5,
+    e_GetRadioStatus = 6,
+    e_GetRadioStatusReply = 7,
+    e_BytesReceivedReply = 8,
+    
+    // Bootloader messages:
+    e_EraseProgramSection = 18,
+    e_EraseProgramSectionDone = 19,
+    e_BeginWriteFlash = 20,
+    e_BeginWriteFlashReply = 21, // WifiSetVal16: Flash page size.
+    e_GetFlashCRC = 22,
+    e_GetFlashCRCReply = 23,
+    e_ReadFlashPages = 24,
+    e_WriteFlashBytesReceivedReply = 25,
+    
+    
+    // Inverter messages:
+    e_SetPWMDutyCycle = 50,
     e_SetPWMPeriod,
     e_SetPWMDeadTime,
+    e_SetCurrentLimits,
     e_SetPWMTemperatureResolution,
     e_GetPWMStatus,
     e_GetPWMStatusReply,
@@ -71,10 +91,72 @@ struct WifiSetVal32 : WifiPackageHeader
     uint32_t m_Value;
 };
 
+enum class WifiBootMode_e : uint8_t
+{
+    e_Application,
+    e_BootLoader
+};
+ 
+struct WifiGetSystemInfoReply : WifiPackageHeader
+{
+#ifdef APP_SECTION_PAGE_SIZE
+    void InitSystemInfo(WifiBootMode_e bootMode, WifiBootMode_e preferredBootMode, uint32_t uptime)
+    {
+        m_BootMode                 = bootMode;
+        m_PreferredBootMode        = preferredBootMode;
+        m_NetworkBufferSize        = WIFI_NETWORK_BUFFER_SIZE;
+        m_Uptime                   = uptime;
+
+        m_EEPROMPageSize           = EEPROM_PAGE_SIZE;
+        m_ApplicationFlashPageSize = APP_SECTION_PAGE_SIZE;
+
+        m_EEPROMStart              = EEPROM_START;
+        m_EEPROMSize               = EEPROM_SIZE;
+
+        m_SRAMStart                = INTERNAL_SRAM_START;
+        m_SRAMSize                 = INTERNAL_SRAM_SIZE;
+
+        m_ApplicationFlashStart    = APP_SECTION_START;
+        m_ApplicationFlashSize     = APP_SECTION_SIZE;
+    }    
+#endif // APP_SECTION_PAGE_SIZE
+    WifiBootMode_e m_BootMode;
+    WifiBootMode_e m_PreferredBootMode;
+    
+    uint16_t       m_NetworkBufferSize;
+
+    uint32_t       m_Uptime;
+    
+    uint16_t       m_EEPROMPageSize;
+    uint16_t       m_ApplicationFlashPageSize;
+
+    uint32_t       m_EEPROMStart;
+    uint32_t       m_EEPROMSize;
+
+    uint32_t       m_SRAMStart;
+    uint32_t       m_SRAMSize;
+    
+    uint32_t       m_ApplicationFlashStart;
+    uint32_t       m_ApplicationFlashSize;
+};
+
+struct WifiSetPreferredBootMode : WifiPackageHeader
+{
+    WifiBootMode_e m_BootMode;
+    bool           m_Reboot;
+};
+
+
 struct WifiSetPWMDeadTime : WifiPackageHeader
 {
     uint8_t m_DeadTimeLS;
     uint8_t m_DeadTimeHS;
+};
+
+struct WifiSetPWMCurrentLimits : WifiPackageHeader
+{
+    uint16_t m_LimitLow;
+    uint16_t m_LimitHigh;
 };
 
 struct WifiSetPWMModulationScale : WifiPackageHeader
@@ -96,13 +178,35 @@ struct WifiGetPWMStatusReply : WifiPackageHeader
     uint16_t m_PWMDutyCycle;
     uint8_t  m_PWMDeadTimeLS;
     uint8_t  m_PWMDeadTimeHS;
+    uint16_t m_PWMCurrentLimitLow;
+    uint16_t m_PWMCurrentLimitHigh;
     uint8_t  m_ModulationMultiplier;    // Samples are multiplied by this
     uint8_t  m_ModulationShifter;       // And then shifted right this many bits.
     uint16_t m_ModulationSampleRate;
     int16_t  m_Temperature1;
     int16_t  m_Temperature2;
     int8_t   m_TemperatureResolution; // Number of bits between 9 and 12 inclusive
+    uint8_t  m_Padding;
+    int16_t  m_CurrentLow;
+    int16_t  m_CurrentHigh;
 };
 
+struct WifiBeginWriteFlashPages : WifiPackageHeader
+{
+    uint32_t m_Address;
+    uint32_t m_Length;
+};
+
+struct WifiGetFlashCRC : WifiPackageHeader
+{
+    uint32_t m_StartAddress;
+    uint32_t m_EndAddress;
+};
+
+struct WifiReadFlashPages : WifiPackageHeader
+{
+    uint32_t m_Address;
+    uint32_t m_Length;
+};
 
 #endif /* WIFIPROTOCOL_H_ */

@@ -23,8 +23,21 @@
 ///////////////////////////////////////
 // Ports:
 //  PORTA
-//   -PIN3(1)   : WIFI Reset
+//   -PIN0(62)  : LCD (DB4)
+//   -PIN1(63)  : LCD (DB5)
+//   -PIN2(64)  : LCD (DB6)
+//   -PIN3(1)   : LCD (DB7)
+//   -PIN4(2)   : Zero Detect
+//   -PIN5(3)   : Sense 5V
+//   -PIN6(4)   : Sense 12V
+//   -PIN7(5)   : Sense 48V
 //  PORTB
+//   -PIN0(6)   : LCD (RW)
+//   -PIN1(7)   : LCD (RS)
+//   -PIN2(8)   : Current Sense L
+//   -PIN3(9)   : Current Window Out
+//   -PIN4(10)  : Current Window In
+//   -PIN5(11)  : Current Sense N
 //   -PIN6(12)  : Quad decoder(1) phase 1
 //   -PIN7(13)  : Quad decoder(3) phase 2
 //  PORTC
@@ -43,8 +56,10 @@
 //  PORTF
 //   -PIN0(46)  : Temp sensor1
 //   -PIN1(47)  : Temp sensor2
-//   -PIN2(48)  : WIFI UART(TX/22) WIFI->MCU
-//   -PIN3(49)  : WIFI UART(RX/21) MCU->WIFI
+//   -PIN2(48)  : Temp Ext 1
+//   -PIN3(49)  : Temp Ext 2
+//   -PIN4(50)  : LCD (E)
+//   -PIN5(51)  : WIFI RESET
 //   -PIN6(54)  : WIFI UART(TX/22) WIFI->MCU
 //   -PIN7(55)  : WIFI UART(RX/21) MCU->WIFI
 //  PORTR
@@ -55,8 +70,8 @@
 //  CH1 : Modulation DMA trigger.
 //  CH2 : PWM fault.
 //  CH3
-//  CH4
-//  CH5
+//  CH4 : Current sens low
+//  CH5 : Current sens high
 //  CH6 : FAN1 RPM
 //  CH7 : FAN2 RPM
 
@@ -180,16 +195,22 @@
 
 #define PWM_TIMER TCC0
 #define PWM_OUT_PORT      e_DigitalPortID_C
-#define PWM_OUT_PINS      (PIN0_bm | PIN1_bm | PIN2_bm | PIN3_bm)
+#define PWM_LOW_PINS      (PIN1_bm | PIN2_bm)
+#define PWM_HIGH_PINS     (PIN0_bm | PIN3_bm)
+#define PWM_OUT_PINS      (PWM_LOW_PINS | PWM_HIGH_PINS)
 #define PWM_AWEX_CHANNELS (AWEX_DTICCAEN_bm | AWEX_DTICCBEN_bm)
 
 #define PWM_CMP_LO_PWM    CCABUF
 #define PWM_CMP_HI_PWM    CCBBUF
-#define PWM_CMP_LO_SAMPLE CCCBUF
-#define PWM_CMP_HI_SAMPLE CCDBUF
+#define PWM_CMP_MID       CCCBUF
+//#define PWM_CMP_LO_SAMPLE CCCBUF
+//#define PWM_CMP_HI_SAMPLE CCDBUF
 
-#define PWM_SAMPLE_LO_TRIG  EVSYS_CHMUX_TCC0_CCC_gc
-#define PWM_SAMPLE_HI_TRIG  EVSYS_CHMUX_TCC0_CCD_gc
+//#define PWM_SAMPLE_LO_TRIG  EVSYS_CHMUX_TCC0_CCC_gc
+//#define PWM_SAMPLE_HI_TRIG  EVSYS_CHMUX_TCC0_CCD_gc
+
+#define PWM_SAMPLE_LO_TRIG  EVSYS_CHMUX_PORTC_PIN0_gc
+#define PWM_SAMPLE_HI_TRIG  EVSYS_CHMUX_PORTC_PIN3_gc
 
 #define PWM_MODULATION_TIMER TCC1
 

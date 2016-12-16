@@ -145,6 +145,7 @@ int AudioPlayer::RequestData(QTcpSocket* socket, int length)
     }
     uint8_t modulationData[2048];
 
+#if 1
     double timePerSample = (double(m_SourceSampleRate) / double(m_SampleRate)) / double(m_SampleBuffer.size());
     for (int i = 0 ; i < length ; ++i)
     {
@@ -156,6 +157,26 @@ int AudioPlayer::RequestData(QTcpSocket* socket, int length)
         modulationData[i] = m_SampleBuffer[j];
         m_CurrentPos += timePerSample;
     }
+#else
+    static uint32_t phase = 0;
+    for (int i = 0 ; i < length ; ++i)
+    {
+#if 0
+        uint32_t cyclePhase = phase % 510;
+        if (cyclePhase < 256) {
+            modulationData[i] = cyclePhase % 256;
+        } else {
+            modulationData[i] = 254 - cyclePhase % 256;
+        }
+        phase += 10;
+#else
+        uint32_t cyclePhase = phase % 100;
+        modulationData[i] = (cyclePhase < 90) ? (cyclePhase * 255 / 89) : 0;
+        phase++;
+#endif
+    }
+#endif
+
     if (length > 0)
     {
         WifiSetVal16 msg;

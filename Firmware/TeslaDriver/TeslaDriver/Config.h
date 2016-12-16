@@ -52,7 +52,7 @@ struct EEPROMContent
     struct Global
     {
         uint8_t        m_Version;
-        uint8_t        m_StandbyState; // 1 when on, 0 if standby. If 1 when powered up it will activate, if not it will go to standby.
+        uint8_t        m_PreferredBootMode; // 1 when on, 0 if standby. If 1 when powered up it will activate, if not it will go to standby.
     } global;
     struct Sound
     {

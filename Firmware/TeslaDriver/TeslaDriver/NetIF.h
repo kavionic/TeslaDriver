@@ -26,7 +26,7 @@
 
 class Event;
 
-class NetIF : public WifiSocket
+class NetIF
 {
 public:
     enum State
@@ -49,10 +49,15 @@ public:
 
     State GetState() const { return m_State; }
 
-    virtual void ConnectionChanged(uint8_t linkID, bool isConnected) override;
-    virtual void DataReceived(uint8_t linkID, int16_t size) override;
+    void ConnectionChanged(uint8_t linkID, bool isConnected);
+    void DataReceived(uint8_t linkID, int16_t size);
 
 private:
+    enum PendingReplies_e
+    {
+        e_PendingReplyPong,
+        e_PendingReplyGetSystemInfo,
+    };
     void ProcessMessage(uint8_t linkID);
     
     
@@ -63,7 +68,9 @@ private:
         WifiSetVal8               m_SetValue8;
         WifiSetVal16              m_SetValue16;
         WifiSetVal32              m_SetValue32;
+        WifiSetPreferredBootMode  m_SetPreferredBootMode;
         WifiSetPWMDeadTime        m_SetPWMDeadTime;
+        WifiSetPWMCurrentLimits   m_SetPWMCurrentLimits;
         WifiSetPWMModulationScale m_SetPWMModulationScale;
     } m_Packages;
     
@@ -75,7 +82,8 @@ private:
     
     int8_t   m_CurrentLinkID = -1;
     uint8_t  m_BytesReceived = 0;
-    uint8_t  m_SendPongIDs = 0;
+    uint8_t  m_PendingReplies = 0;
+
     uint8_t  m_SendPWMStatusLinkIDs = 0;
     uint8_t  m_SendRadioStatusLinkIDs = 0;
     

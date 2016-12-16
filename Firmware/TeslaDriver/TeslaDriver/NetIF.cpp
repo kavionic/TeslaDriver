@@ -59,9 +59,7 @@ void NetIF::RestartRadio()
     /*        if (!g_WifiDevice.RestartRadio()){
         continue;
     }*/
-    if (!g_WifiDevice.EnableEcho(false)){
-        return;
-    }
+    g_WifiDevice.EnableEcho(false);
     //g_Display.SetCursor(0, 0);
     //g_Display.Printf_P(PSTR("Set ESP baudrate..."));
     //g_Display.ClearToEndOfLine();
@@ -74,9 +72,7 @@ void NetIF::RestartRadio()
 //    if (!g_WifiDevice.GetModuleVersion()){
 //        return;
 //    }
-    if (!g_WifiDevice.SetMuxMode(WifiMuxMode_e::e_Multiple)){
-        return;
-    }
+    g_WifiDevice.SetMuxMode(WifiMuxMode_e::e_Multiple);
 /*    if (!g_WifiDevice.SetWifiMode(WifiMode_e::e_Station)){
         return;
     }*/
@@ -222,7 +218,7 @@ void NetIF::Run(const Event& event)
             
             m_BytesReceived             = 0;
             m_CurrentLinkID             = -1;
-            m_SendPongIDs               = 0;
+            m_PendingReplies            = 0;
             m_SendPWMStatusLinkIDs      = 0;
             m_SendRadioStatusLinkIDs    = 0;
             m_ModulationBytesToReceive  = 0;
@@ -244,17 +240,24 @@ void NetIF::Run(const Event& event)
     }
     else if (m_State == e_StateRunning)
     {
-        if (m_SendPongIDs != 0)
+        if (m_PendingReplies & BIT8(e_PendingReplyPong, 1))
         {
-            uint8_t receivers = m_SendPongIDs;
-            m_SendPongIDs = 0;
+            m_PendingReplies &= U8(~BIT8(e_PendingReplyPong, 1));
             WifiPackageHeader reply;
             WifiPackageHeader::InitMsg(reply, WifiCmd_e::e_Pong);
-        
-            for (uint8_t i = 0 ; i < ESP8266::WIFI_MAX_LINKS ; ++i) {
-                if (receivers & BIT8(i, 1)) g_WifiDevice.SendIPData(i, &reply, sizeof(reply));
-            }
+            
+            g_WifiDevice.SendIPData(m_CurrentLinkID, &reply, sizeof(reply));
         }
+        if (m_PendingReplies & BIT8(e_PendingReplyGetSystemInfo, 1))
+        {
+            m_PendingReplies &= U8(~BIT8(e_PendingReplyGetSystemInfo, 1));
+            
+            WifiGetSystemInfoReply reply;
+            WifiPackageHeader::InitMsg(reply, WifiCmd_e::e_GetSystemInfoReply);
+            reply.InitSystemInfo(WifiBootMode_e::e_Application, WifiBootMode_e(g_EEPROM.global.m_PreferredBootMode), Clock::GetTime());
+            g_WifiDevice.SendIPData(m_CurrentLinkID, &reply, sizeof(reply));
+        }
+        
     //    static uint8_t prevModulationBuffer = 1;
     
     //    if ( g_PWMController.GetCurrentModulationBuffer() != prevModulationBuffer )
@@ -281,11 +284,16 @@ void NetIF::Run(const Event& event)
             reply.m_PWMPeriode = g_PWMController.GetPeriod();
             reply.m_PWMDutyCycle = g_PWMController.GetDutyCycle();
             g_PWMController.GetDeadTime(&reply.m_PWMDeadTimeLS, &reply.m_PWMDeadTimeHS);
+            g_PWMController.GetCurrentLimits(&reply.m_PWMCurrentLimitLow, &reply.m_PWMCurrentLimitHigh);
             g_PWMController.GetModulationScale(reply.m_ModulationMultiplier, reply.m_ModulationShifter);
             reply.m_ModulationSampleRate  = g_PWMController.GetModulationSampleRate();
             reply.m_Temperature1          = DS18B20::GetTemp1();
             reply.m_Temperature2          = DS18B20::GetTemp2();
             reply.m_TemperatureResolution = DS18B20::GetResolution();
+            cli();
+            reply.m_CurrentLow            = ADCB.CH0.RES;
+            reply.m_CurrentHigh           = ADCB.CH1.RES;
+            sei();
             //printf_P(PSTR("Sending PWM status.\n"));
             for (uint8_t i = 0 ; i < ESP8266::WIFI_MAX_LINKS ; ++i) {
                 if (receivers & BIT8(i, 1)) g_WifiDevice.SendIPData(i, &reply, sizeof(reply));
@@ -305,6 +313,14 @@ void NetIF::Run(const Event& event)
                 if (receivers & BIT8(i, 1)) g_WifiDevice.SendIPData(i, &reply, sizeof(reply));
             }
         }
+/*        uint16_t bytesReceived = g_WifiDevice.GetAndClearChannelBytesReceived(m_CurrentLinkID);
+        if (bytesReceived != 0)
+        {
+            WifiSetVal16 msg;
+            WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_BytesReceivedReply);
+            msg.m_Value = bytesReceived;
+            g_WifiDevice.SendIPData(m_CurrentLinkID, &msg, sizeof(msg));
+        }*/
     }        
 }
 
@@ -440,7 +456,22 @@ void NetIF::ProcessMessage(uint8_t linkID)
     {
         case WifiCmd_e::e_Ping:
             //printf_P(PSTR("Get Radio status\n"));
-            m_SendPongIDs |= BIT8(linkID, 1);
+            m_PendingReplies |= BIT8(e_PendingReplyPong, 1);
+            break;
+        case WifiCmd_e::e_SetPreferredBootMode:
+            eeprom_write_byte(&g_EEPROMunmapped.global.m_PreferredBootMode, U8(m_Packages.m_SetPreferredBootMode.m_BootMode));
+            eeprom_busy_wait();
+            Config::MapEEPROM();
+            if (!m_Packages.m_SetPreferredBootMode.m_Reboot) {
+                break;
+            }
+            // FALL THROUGH //                
+        case WifiCmd_e::e_Reboot:
+            CCP = CCP_IOREG_gc;
+            RST.CTRL = RST_SWRST_bm;
+            break;
+        case WifiCmd_e::e_GetSystemInfo:
+            m_PendingReplies |= BIT8(e_PendingReplyGetSystemInfo, 1);
             break;
         case WifiCmd_e::e_SetPWMDutyCycle:
             //printf_P(PSTR("Set PWM: %d\n"), uint16_t((uint32_t(m_Packages.m_SetValue16.m_Value) * 100 + 32768) / 65536));
@@ -454,6 +485,8 @@ void NetIF::ProcessMessage(uint8_t linkID)
             printf_P(PSTR("Set dead time: %d/%d\n"), m_Packages.m_SetPWMDeadTime.m_DeadTimeLS, m_Packages.m_SetPWMDeadTime.m_DeadTimeHS);
             g_PWMController.SetDeadTime(m_Packages.m_SetPWMDeadTime.m_DeadTimeLS, m_Packages.m_SetPWMDeadTime.m_DeadTimeHS);
             break;
+        case WifiCmd_e::e_SetCurrentLimits:
+            g_PWMController.SetCurrentLimits(m_Packages.m_SetPWMCurrentLimits.m_LimitLow, m_Packages.m_SetPWMCurrentLimits.m_LimitHigh);
         case WifiCmd_e::e_SetPWMTemperatureResolution:
             DS18B20::SetResolution(m_Packages.m_SetValue8.m_Value);
             break;
@@ -480,4 +513,22 @@ void NetIF::ProcessMessage(uint8_t linkID)
             printf_P(PSTR("ERROR: NetIF::ProcessMessage() received unknown command: %d\n"), m_Packages.m_Header.m_Command);
             break;
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void ESP8266_ConnectionChangedCallback(uint8_t linkID, bool isConnected)
+{
+    g_NetIF.ConnectionChanged(linkID, isConnected);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void ESP8266_DataReceivedCallback(uint8_t linkID, int16_t size)
+{
+    g_NetIF.DataReceived(linkID, size);
 }

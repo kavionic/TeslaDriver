@@ -8,3 +8,21 @@ Heatsink drill hole, distance from bottom: 10.5mm
 Heatsink drill hole 1: 6.49*2.5 + 1.0/2 = 16.725
 Heatsink drill hole 8: 6.49*8.5 + 1.0/2 = 55.665
 
+
+TO-247 mounting hole height:
+4+20.2-5.5 = 18.7
+Center offset: 5.45mm
+
+Gate driver power disipation (Si8233BB):
+Quicent power:
+5*3e-3 + 2*12*2.5e-3 = 75mW
+Dynamic power:
+150e3*170e-9*12*(2.7/(2.7+2)) + 150e3*170e-9*12*(1/(1+2)) + 2*150e3*370e-12*12^2 = 293.771mW
+PPtot = 75e-3 + 2*293.771e-3 = 662.5425mW
+Trise = 100 * 662.5425e-3 = 66.2542 degC
+
+Total Rg dissipation:
+170
+
+150e3*170e-9*12 + 150e3*170e-9*12 + 2*150e3*370e-12*12^2
+150e3*170e-9*12*(2.7/(2.7+Rg)) + 150e3*170e-9*12*(1/(1+Rg)) + 2*150e3*370e-12*12^2 = 293.771mW

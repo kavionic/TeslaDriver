@@ -20,6 +20,8 @@
 #include "stdafx.h"
 #include "TeslaTuner.h"
 
+DeviceInfo TeslaTuner::s_DeviceInfo;
+
 ///////////////////////////////////////////////////////////////////////////////
 ///
 ///////////////////////////////////////////////////////////////////////////////
@@ -35,12 +37,11 @@ TeslaTuner::TeslaTuner(QWidget *parent) : QMainWindow(parent), m_AudioPlayer(thi
     connect(m_DeadTimeLSSlider, &QAbstractSlider::valueChanged, this, &TeslaTuner::SlotDeadTimeLSSliderChanged);
     connect(m_DeadTimeHSSlider, &QAbstractSlider::valueChanged, this, &TeslaTuner::SlotDeadTimeHSSliderChanged);
 
+    connect(m_CurrentLimitLowSlider, &QAbstractSlider::valueChanged, this, &TeslaTuner::SlotCurrentLimitLowSliderChanged);
+    connect(m_CurrentLimitHighSlider, &QAbstractSlider::valueChanged, this, &TeslaTuner::SlotCurrentLimitHighSliderChanged);
+
     connect(m_TemperatureResolutionSlider, &QAbstractSlider::valueChanged, this, &TeslaTuner::SlotTemperatureResolutionSliderChanged);
 
-    connect(m_DeviceAddressView, SIGNAL(activated(int)), this, SLOT(SlotDeviceAddressSelected(int)));
-//    connect(m_DeviceAddressView, &QComboBox::currentTextChanged, this, &TeslaTuner::SlotDeviceAddressSelected);
-    connect(m_DevicePortView, &QLineEdit::editingFinished, this, &TeslaTuner::SlotDevicePortChanged);
-    connect(m_ConnectCheckBox, &QCheckBox::stateChanged, this, &TeslaTuner::SlotConnectCheckBoxChanged);
 
     connect(m_AudioFileBrowseButton, &QToolButton::clicked, this, &TeslaTuner::SlotBrowseAudioFile);
     connect(m_AudioFileView, SIGNAL(activated(int)), this, SLOT(SlotAudioPathSelected(int)));
@@ -53,30 +54,23 @@ TeslaTuner::TeslaTuner(QWidget *parent) : QMainWindow(parent), m_AudioPlayer(thi
     connect(&m_DeviceSocket, &QAbstractSocket::stateChanged, this, &TeslaTuner::SlotConnectionStateChanged);
     connect(&m_DeviceSocket, &QTcpSocket::readyRead, this, &TeslaTuner::SlotSocketDataReady);
 
-    m_ConnectionStatusView->setText("NO CONNECTION");
-
+    m_ConnectionPanel->SetSocket(&m_DeviceSocket);
+    m_ConnectionPanel->LoadSettings();
+    m_FirmwareWriter->SetSocket(&m_DeviceSocket);
+    m_FirmwareWriter->LoadSettings();
     UpdateTemperatureResolutionValue();
     UpdateFrequencySliderValue();
     UpdateDutyCycleSliderValue();
     UpdateDeadTimeLSSliderValue();
     UpdateDeadTimeHSSliderValue();
+    UpdateCurrentLimitLowSliderValue();
+    UpdateCurrentLimitHighSliderValue();
     UpdateVolumeSliderValue();
     UpdateSampleRateSliderValue();
 
     EnableControls(false);
 
-    m_DeviceAddressView->setMaxCount(30);
-
-    int addressCount = settings.beginReadArray("Network/DeviceAddressHistory");
-    for (int i = 0 ; i < addressCount; ++i)
-    {
-        settings.setArrayIndex(i);
-        m_DeviceAddressView->addItem(settings.value("address").toString());
-    }
-    settings.endArray();
-    m_DevicePortView->setText(QString::asprintf("%d", settings.value("Network/DevicePort").toInt()));
-    m_ConnectCheckBox->setChecked(settings.value("Network/Connected").toBool());
-    //m_AudioFileView->setInsertPolicy(QComboBox::InsertAtTop);
+        //m_AudioFileView->setInsertPolicy(QComboBox::InsertAtTop);
     m_AudioFileView->setMaxCount(30);
 
     int pathCount = settings.beginReadArray("Audio/FileHistory");   
@@ -161,17 +155,8 @@ void TeslaTuner::closeEvent(QCloseEvent* event)
 {
     QSettings settings;
 
-    settings.beginWriteArray("Network/DeviceAddressHistory", m_DeviceAddressView->count());
-    for (int i = 0, e = m_DeviceAddressView->count() ; i < e; ++i)
-    {
-        settings.setArrayIndex(i);
-        settings.setValue("address", m_DeviceAddressView->itemText(i));
-    }
-    settings.endArray();
-    settings.setValue("Network/DevicePort", m_DevicePortView->text().toInt());
-
-    settings.setValue("Network/Connected", m_ConnectCheckBox->isChecked());
-
+    m_ConnectionPanel->SaveSettings();
+    m_FirmwareWriter->SaveSettings();
     settings.beginWriteArray("Audio/FileHistory", m_AudioFileView->count());
     for (int i = 0, e = m_AudioFileView->count() ; i < e; ++i)
     {
@@ -187,37 +172,37 @@ void TeslaTuner::closeEvent(QCloseEvent* event)
 
 void TeslaTuner::SlotConnectionStateChanged(QAbstractSocket::SocketState state)
 {
-    m_IsRadioStatusUpdatePending = false;
-    m_IsRadioStatusValid = false;
     m_IsStatusUpdatePending = false;
     m_IsModulationDataPending = false;
     m_IsPWMStatusValid = false;
 
-    m_LatencyView->setText("--");
+    m_ConnectionPanel->ConnectionStateChanged(state);
+//    m_FirmwareWriter->ConnectionStateChanged(state);
     UpdatePWMStatusView();
+
+    if (state != QAbstractSocket::ConnectedState)
+    {
+        m_FirmwareWriter->DeviceConnected(false);
+    }
     switch (state)
     {
     case QAbstractSocket::UnconnectedState:
         EnableControls(false);
-        m_ConnectionStatusView->setText("NO CONNECTION");
         break;
     case QAbstractSocket::HostLookupState:
-        m_ConnectionStatusView->setText("LOOKUP");
         break;
     case QAbstractSocket::ConnectingState:
-        m_ConnectionStatusView->setText("CONNECTING");
         break;
     case QAbstractSocket::ConnectedState:
-        m_UpdateSliders = true;
-        m_ConnectionStatusView->setText("CONNECTED");
-        SendPing();
-        RequestRadioStatus();
-        RequestPWMStatus();
-//        m_TimeSinceModulationSent.start();
-//        SendModulationData();
+        WifiPackageHeader msg;
+        WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_GetSystemInfo);
+        m_DeviceSocket.write(reinterpret_cast<const char*>(&msg), sizeof(msg));
+        m_TimeSinceSystemInfoRequest.start();
+
+//        m_UpdateSliders = true;
+//        RequestPWMStatus();
         break;
     case QAbstractSocket::ClosingState:
-        m_ConnectionStatusView->setText("CLOSING");
         break;
     default:
         break;
@@ -325,27 +310,29 @@ void TeslaTuner::ProcessResponse()
     switch (m_ResponsePackages.m_Header.m_Command)
     {
         case WifiCmd_e::e_Pong:
-            m_Latency = m_TimeSincePingSent.nsecsElapsed();
-//            m_LatencyView->setText(QString::asprintf("%.3fmS", double(m_Latency/1000)/1000.0));
-            m_IsPingPending = false;
+            m_ConnectionPanel->HandleNetPong();
+            break;
+        case WifiCmd_e::e_GetSystemInfoReply:
+            s_DeviceInfo.m_CurrentBootMode   = m_ResponsePackages.m_GetSystemInfoReply.m_BootMode;
+            s_DeviceInfo.m_PreferredBootMode = m_ResponsePackages.m_GetSystemInfoReply.m_PreferredBootMode;
+            s_DeviceInfo.m_NetworkBufferSize = m_ResponsePackages.m_GetSystemInfoReply.m_NetworkBufferSize;
+            s_DeviceInfo.m_FlashPageSize     = m_ResponsePackages.m_GetSystemInfoReply.m_ApplicationFlashPageSize;
+            s_DeviceInfo.m_FlashStartAddress = m_ResponsePackages.m_GetSystemInfoReply.m_ApplicationFlashStart;
+            s_DeviceInfo.m_FlashSize         = m_ResponsePackages.m_GetSystemInfoReply.m_ApplicationFlashSize;
+            m_TimeSinceSystemInfoRequest.invalidate();
+
+            setWindowTitle((s_DeviceInfo.m_CurrentBootMode == WifiBootMode_e::e_Application) ? "TeslaTuner (Normal)" : "TeslaTuner (Boot Loader)");
+            if (s_DeviceInfo.m_CurrentBootMode == WifiBootMode_e::e_Application)
+            {
+                m_UpdateSliders = true;
+                RequestPWMStatus();
+            }
+            m_FirmwareWriter->DeviceConnected(true);
+//            m_FirmwareWriter->HandleNetGetSystemInfoReply(m_ResponsePackages.m_GetSystemInfoReply);
             break;
         case WifiCmd_e::e_GetRadioStatusReply:
-        {
-            //m_Latency = m_TimeSinceRadioStatusRequest.nsecsElapsed();
-            int strength = m_ResponsePackages.m_GetRadioStatusReply.m_Strength;
-            if ( strength < -100 ) {
-                strength = 0;
-            } else if (strength > -50) {
-                strength = 100;
-            } else {
-                strength = 100 + (50 + strength) * 2;
-            }
-//            m_SignalStrengthView->setText(QString::asprintf("%d%%", strength));
-            m_SignalStrengthView->setValue(strength);
-            m_IsRadioStatusUpdatePending = false;
-            m_IsRadioStatusValid = true;
+            m_ConnectionPanel->HandleNetMsg(m_ResponsePackages.m_GetRadioStatusReply);
             break;
-            }
         case WifiCmd_e::e_GetPWMStatusReply:
             //m_Latency = m_TimeSincePWMStatusRequest.nsecsElapsed();
             m_PWMStatus = m_ResponsePackages.m_GetPWMStatusReply;
@@ -360,6 +347,15 @@ void TeslaTuner::ProcessResponse()
             m_IsModulationDataPending = false;
             SendModulationData();
             break;
+        case WifiCmd_e::e_EraseProgramSectionDone:
+            m_FirmwareWriter->HandleNetEraseProgramSectionDone();
+            break;
+        case WifiCmd_e::e_WriteFlashBytesReceivedReply:
+            m_FirmwareWriter->HandleNetFlashBytesReceivedReply(m_ResponsePackages.m_SetVal16.m_Value);
+            break;
+        case WifiCmd_e::e_GetFlashCRCReply:
+            m_FirmwareWriter->HandleNetFlashCRCReply(m_ResponsePackages.m_SetVal32.m_Value);
+            break;
         default:
             break;
     }
@@ -371,39 +367,28 @@ void TeslaTuner::ProcessResponse()
 
 void TeslaTuner::SlotRefreshTimer()
 {
-    if (m_IsStatusUpdatePending && m_TimeSincePWMStatusRequest.elapsed() > 1000) {
-        //m_IsRadioStatusUpdatePending = false;
-        //m_IsRadioStatusValid = false;
-        m_IsStatusUpdatePending = false;
-        //m_IsPWMStatusValid = false;
-        m_DeviceSocket.disconnectFromHost();
-        m_DeviceSocket.abort();
-
-        //RequestPWMStatus();
-    }
-    if (m_DeviceSocket.state() == QAbstractSocket::UnconnectedState)
+    if (m_TimeSinceSystemInfoRequest.isValid())
     {
-//        m_DeviceSocket.connectToHost("192.168.1.149", 42);
-//        m_DeviceSocket.connectToHost("192.168.1.146", 42);
-//        m_DeviceSocket.connectToHost("192.168.1.141", 42);
-//        m_DeviceSocket.connectToHost("192.168.1.142", 42);
-        ReconnectDevice();
+        if (m_TimeSinceSystemInfoRequest.elapsed() > 1000)
+        {
+            m_DeviceSocket.close();
+            m_TimeSinceSystemInfoRequest.invalidate();
+        }
         return;
     }
-    if (!m_IsPingPending && m_TimeSincePingSent.elapsed() > 1000) {
-        SendPing();
-    }
-    if (!m_IsRadioStatusUpdatePending && m_TimeSinceRadioStatusRequest.elapsed() > 1000) {
-        //RequestRadioStatus();
-    }
-    if (!m_IsStatusUpdatePending && m_TimeSincePWMStatusRequest.elapsed() > 100) {
-        RequestPWMStatus();
-    }
-/*    if (!m_IsModulationDataPending && (m_TimeSinceModulationSent.elapsed() - m_ModulationSendTime) > 1000) {
-        SendModulationData();
-    }*/
-    if (!m_IsModulationDataPending && m_AudioPlayer.GetState() == AudioPlayer::e_StatePlaying && (m_TimeSinceModulationSent.elapsed() - m_ModulationSendTime) > 100) {
-        SendModulationData();
+    m_FirmwareWriter->Run();
+    if (!m_FirmwareWriter->IsFlashing())
+    {
+        m_ConnectionPanel->Run();
+        if (!m_IsStatusUpdatePending && m_TimeSincePWMStatusRequest.elapsed() > 100) {
+            RequestPWMStatus();
+        }
+        /*    if (!m_IsModulationDataPending && (m_TimeSinceModulationSent.elapsed() - m_ModulationSendTime) > 1000) {
+                SendModulationData();
+                }*/
+        if (!m_IsModulationDataPending && m_AudioPlayer.GetState() == AudioPlayer::e_StatePlaying && (m_TimeSinceModulationSent.elapsed() - m_ModulationSendTime) > 100) {
+            SendModulationData();
+        }
     }
 }
 
@@ -501,6 +486,42 @@ void TeslaTuner::SlotDeadTimeHSSliderChanged(int value)
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
+void TeslaTuner::SlotCurrentLimitLowSliderChanged(int value)
+{
+    if (m_DeviceSocket.state() == QAbstractSocket::ConnectedState && m_IsPWMStatusValid && m_PWMStatus.m_PWMCurrentLimitLow != value)
+    {
+        WifiSetPWMCurrentLimits msg;
+        WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_SetCurrentLimits);
+        msg.m_LimitLow= value;
+        msg.m_LimitHigh = m_CurrentLimitHighSlider->value();
+
+        m_DeviceSocket.write(reinterpret_cast<const char*>(&msg), sizeof(msg));
+    }
+    UpdateCurrentLimitLowSliderValue();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void TeslaTuner::SlotCurrentLimitHighSliderChanged(int value)
+{
+    if (m_DeviceSocket.state() == QAbstractSocket::ConnectedState && m_IsPWMStatusValid && m_PWMStatus.m_PWMCurrentLimitHigh != value)
+    {
+        WifiSetPWMCurrentLimits msg;
+        WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_SetCurrentLimits);
+        msg.m_LimitLow = m_CurrentLimitLowSlider->value();
+        msg.m_LimitHigh = value;
+
+        m_DeviceSocket.write(reinterpret_cast<const char*>(&msg), sizeof(msg));
+    }
+    UpdateCurrentLimitHighSliderValue();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
 void TeslaTuner::UpdateDeadTimeLSSliderValue()
 {
     m_DeadTimeLSSliderValue->setText(QString::asprintf("%.2fnS", double(m_DeadTimeLSSlider->value()) * 1e9 / double(m_PWMStatus.m_Frequency)));
@@ -513,6 +534,24 @@ void TeslaTuner::UpdateDeadTimeLSSliderValue()
 void TeslaTuner::UpdateDeadTimeHSSliderValue()
 {
     m_DeadTimeHSSliderValue->setText(QString::asprintf("%.2fnS", double(m_DeadTimeHSSlider->value()) * 1e9 / double(m_PWMStatus.m_Frequency)));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void TeslaTuner::UpdateCurrentLimitLowSliderValue()
+{
+    m_CurrentLimitLowSliderValue->setText(QString::asprintf("%.0f", double(m_CurrentLimitLowSlider->value())));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void TeslaTuner::UpdateCurrentLimitHighSliderValue()
+{
+    m_CurrentLimitHighSliderValue->setText(QString::asprintf("%.0f", double(m_CurrentLimitHighSlider->value())));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -543,42 +582,6 @@ void TeslaTuner::UpdateTemperatureResolutionValue()
 
 }
 
-///////////////////////////////////////////////////////////////////////////////
-///
-///////////////////////////////////////////////////////////////////////////////
-
-void TeslaTuner::SlotDeviceAddressSelected(int index)
-{
-    QString address = m_DeviceAddressView->itemText(index);
-    if (index != 0) {
-        m_DeviceAddressView->setItemText(index, m_DeviceAddressView->itemText(0));
-        m_DeviceAddressView->setItemText(0, address);
-        m_DeviceAddressView->setCurrentIndex(0);
-    }
-//    m_DeviceAddressView->setEditText(address);
-//    m_DeviceAddressView->removeItem(index);
-//    m_DeviceAddressView->insertItem(0, address);
-//    m_DeviceAddressView->setCurrentIndex(0);
-    ReconnectDevice();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///
-///////////////////////////////////////////////////////////////////////////////
-
-void TeslaTuner::SlotDevicePortChanged()
-{
-    ReconnectDevice();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///
-///////////////////////////////////////////////////////////////////////////////
-
-void TeslaTuner::SlotConnectCheckBoxChanged()
-{
-    ReconnectDevice();
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
@@ -589,7 +592,7 @@ void TeslaTuner::SlotVolumeSliderChanged(int value)
     WifiSetPWMModulationScale msg;
     WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_SetPWMModulationScale);
 
-    double scale = double(m_PWMStatus.m_PWMPeriode) * double(value) / (32.0*255.0);
+    double scale = double(m_PWMStatus.m_PWMPeriode) * double(value) / (100.0*255.0);
 
     double smallestError = std::numeric_limits<double>::max();
     for (int shifter = 0 ; shifter < 16 ; ++shifter)
@@ -726,38 +729,6 @@ void TeslaTuner::SlotStopButton()
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-void TeslaTuner::ReconnectDevice()
-{
-    m_DeviceSocket.disconnectFromHost();
-    m_DeviceSocket.abort();
-    if (m_ConnectCheckBox->checkState())
-    {
-        m_DeviceSocket.connectToHost(m_DeviceAddressView->currentText(), m_DevicePortView->text().toInt());
-        m_DeviceSocket.setSocketOption(QAbstractSocket::LowDelayOption, 1);
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///
-///////////////////////////////////////////////////////////////////////////////
-
-void TeslaTuner::SendPing()
-{
-    if (!m_IsPingPending && m_DeviceSocket.state() == QAbstractSocket::ConnectedState)
-    {
-        m_IsPingPending = true;
-
-        WifiPackageHeader msg;
-        WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_Ping);
-        m_DeviceSocket.write(reinterpret_cast<const char*>(&msg), sizeof(msg));
-        m_TimeSincePingSent.start();
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///
-///////////////////////////////////////////////////////////////////////////////
-
 void TeslaTuner::SendModulationData()
 {
     int bytesRequested = m_AudioPlayer.RequestData(&m_DeviceSocket, 2048);
@@ -770,25 +741,8 @@ void TeslaTuner::SendModulationData()
         if (latency > 0) {
             m_ModulationBitrate += ((MOD_BUF_SIZE * 1000.0 / latency) - m_ModulationBitrate) * 0.01;
         }
-        m_LatencyView->setText(QString::asprintf("%.3fkb/S", m_ModulationBitrate / 1024.0));
+//        m_LatencyView->setText(QString::asprintf("%.3fkb/S", m_ModulationBitrate / 1024.0));
         m_IsModulationDataPending = true;
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-///
-///////////////////////////////////////////////////////////////////////////////
-
-void TeslaTuner::RequestRadioStatus()
-{
-    if (!m_IsRadioStatusUpdatePending && m_DeviceSocket.state() == QAbstractSocket::ConnectedState)
-    {
-        m_IsRadioStatusUpdatePending = true;
-
-        WifiPackageHeader msg;
-        WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_GetRadioStatus);
-        m_DeviceSocket.write(reinterpret_cast<const char*>(&msg), sizeof(msg));
-        m_TimeSinceRadioStatusRequest.start();
     }
 }
 
@@ -841,6 +795,22 @@ void TeslaTuner::UpdatePWMStatusView()
         m_PWMDeadTimeHS->setText(QString::asprintf("%.2fnS", double(m_PWMStatus.m_PWMDeadTimeHS) * 1e9 / double(m_PWMStatus.m_Frequency)));
         m_PWMTemperature1->setText(QString::asprintf("<qt>%.2f&deg;C</qt>", double(m_PWMStatus.m_Temperature1) / 16.0));
         m_PWMTemperature2->setText(QString::asprintf("<qt>%.2f&deg;C</qt>", double(m_PWMStatus.m_Temperature2) / 16.0));
+//        m_PWMCurrentLow->setText(QString::asprintf("%.2fA", double(m_PWMStatus.m_CurrentLo - 1024) / 1024.0 * 200.0));
+//        m_PWMCurrentHigh->setText(QString::asprintf("%.2fA", double(m_PWMStatus.m_CurrentHi - 1024) / 1024.0 * 200.0));
+
+        static double currentLow = 0.0f;
+        static double currentHigh = 0.0f;
+
+//        currentLow += 1;
+//        currentHigh -= 1;
+//        if (m_PWMStatus.m_CurrentLow < currentLow) currentLow = m_PWMStatus.m_CurrentLow;
+//        if (m_PWMStatus.m_CurrentHigh > currentHigh) currentHigh = m_PWMStatus.m_CurrentHigh;
+        currentLow +=  (double(m_PWMStatus.m_CurrentLow) - currentLow) * 0.5;
+        currentHigh +=  (double(m_PWMStatus.m_CurrentHigh) - currentHigh) * 0.5;
+//        currentLow = m_PWMStatus.m_CurrentLow;
+//        currentHigh = m_PWMStatus.m_CurrentHigh;
+        m_PWMCurrentLow->setText(QString::asprintf("%.1fA", currentLow * 200.0 / 2048.0));
+        m_PWMCurrentHigh->setText(QString::asprintf("%.1fA", currentHigh * 200.0 / 2048.0));
 
         if (m_UpdateSliders)
         {
@@ -849,11 +819,13 @@ void TeslaTuner::UpdatePWMStatusView()
             m_DutyCycleSlider->setValue(m_PWMStatus.m_PWMDutyCycle);
             m_DeadTimeLSSlider->setValue(m_PWMStatus.m_PWMDeadTimeLS);
             m_DeadTimeHSSlider->setValue(m_PWMStatus.m_PWMDeadTimeHS);
+            m_CurrentLimitLowSlider->setValue(m_PWMStatus.m_PWMCurrentLimitLow);
+            m_CurrentLimitHighSlider->setValue(m_PWMStatus.m_PWMCurrentLimitHigh);
             m_TemperatureResolutionSlider->setValue(m_PWMStatus.m_TemperatureResolution);
 
             m_SampleRateSlider->setValue(m_PWMStatus.m_ModulationSampleRate);
             double scale = double(m_PWMStatus.m_ModulationMultiplier) / double(1<<m_PWMStatus.m_ModulationShifter);
-            int volume = scale * (32.0*255.0) / double(m_PWMStatus.m_PWMPeriode) + 0.5;
+            int volume = scale * (100.0*255.0) / double(m_PWMStatus.m_PWMPeriode) + 0.5;
             m_VolumeSlider->setValue(volume);
 
             EnableControls(true);

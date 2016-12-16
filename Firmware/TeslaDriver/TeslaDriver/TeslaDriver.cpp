@@ -145,6 +145,14 @@ static int uart_putchar(char c, FILE *stream)
     return 0;
 }
 
+void DebugLogWriter::Write( char c )
+{
+    // Wait for the transmit buffer to be empty
+    while ( !( DEBUG_USART.STATUS & USART_DREIF_bm) );
+    
+    // Put our character into the transmit buffer
+    DEBUG_USART.DATA = c;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
@@ -161,12 +169,29 @@ static int uart_putchar(char c, FILE *stream)
     
 ISR(TCE0_OVF_vect)
 {
+    static uint8_t faultDelay = 0;
+    
+    if (faultDelay == 0)
+    {
+        if (AWEXC.STATUS & AWEX_FDF_bm)
+        {
+            faultDelay = 2;
+        }
+    }
+    else
+    {
+        if (!--faultDelay)
+        {
+            AWEXC.STATUS |= AWEX_FDF_bm;
+        }
+    }        
+
 //    SYSTEM_TIMER.CCC += CPU_FREQ / 1000;
     g_HighresClock += CPU_FREQ / 1000;
 //    Clock::IncrementTime();
     Clock::AddCycles();
     sei();
-        
+
     if ( !(--g_TimerTick10) )
     {
         g_TimerTick10 = 20;
@@ -192,7 +217,7 @@ ISR(TCE0_OVF_vect)
 //    g_Timer += 0x10000;
 }
 
-
+/*
 static uint16_t ReadCalibrationWord(volatile void* address)
 {
     uint16_t value;
@@ -201,10 +226,23 @@ static uint16_t ReadCalibrationWord(volatile void* address)
     value = pgm_read_word(address);
     NVM_CMD = NVM_CMD_NO_OPERATION_gc;
     return value;
+}*/
+
+static uint8_t ReadCalibrationByte(volatile void* address)
+{
+    uint8_t value;
+
+    NVM_CMD = NVM_CMD_READ_CALIB_ROW_gc;
+    value = pgm_read_byte(address);
+    NVM_CMD = NVM_CMD_NO_OPERATION_gc;
+    return value;
 }
 
 void panic()
 {
+    PWM_OUT_PORT->OUTCLR = PWM_OUT_PINS;
+    AWEXC.OUTOVEN = PWM_OUT_PINS;
+    PWM_OUT_PORT->DIRSET = PWM_OUT_PINS;
     g_Display.SetCursor(0,0);
     g_Display.Printf_P(PSTR("PANIC!"));
     cli();
@@ -213,8 +251,20 @@ void panic()
 
 int main(void)
 {
-    ADCA.CAL = ReadCalibrationWord(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->ADCACAL0);
-    ADCB.CAL = ReadCalibrationWord(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->ADCBCAL0);
+    PWM_OUT_PORT->OUTCLR = PWM_OUT_PINS;
+    PWM_OUT_PORT->DIRSET = PWM_OUT_PINS;
+    
+    ADCA.CALL = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->ADCACAL0);
+    ADCA.CALH = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->ADCACAL1);
+    
+    ADCB.CALL = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->ADCBCAL0);
+    ADCB.CALH = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->ADCBCAL1);
+    
+    DACB.CH0GAINCAL = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->DACB0GAINCAL);
+    DACB.CH0OFFSETCAL = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->DACB0OFFCAL);
+    
+    DACB.CH1GAINCAL = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->DACB1GAINCAL);
+    DACB.CH1OFFSETCAL = ReadCalibrationByte(&((NVM_PROD_SIGNATURES_t*)PROD_SIGNATURES_START)->DACB1OFFCAL);
     
     CCP = CCP_IOREG_gc;
     WDT.CTRL = (WDT.CTRL & ~WDT_ENABLE_bm) | WDT_CEN_bm;
@@ -313,13 +363,6 @@ int main(void)
 
     g_WifiDevice.Initialize(false);
     Beeper::Beep(BeepID::e_KeyPress);
-    
-    g_WifiDevice.RegisterSocket(0, &g_NetIF);
-    g_WifiDevice.RegisterSocket(1, &g_NetIF);
-    g_WifiDevice.RegisterSocket(2, &g_NetIF);
-    g_WifiDevice.RegisterSocket(3, &g_NetIF);
-    g_WifiDevice.RegisterSocket(4, &g_NetIF);
-
     g_NetIF.ReconfigureRadio();
     
     printf_P(PSTR("...radio initialized.\n"));
@@ -345,9 +388,14 @@ int main(void)
             printf_P(PSTR("Key up: %S\n"), Keyboard::GetKeyName(KbdKeyCodes::Enum(event.value)));
         }
         g_FanController.Run(event);
-        
+
         if ( !g_WifiDevice.Run()){
             printf_P(PSTR("ERROR: ESP8266::Run() failed! Restarting radio.\n"));
+            g_NetIF.ReconfigureRadio();
+        }
+        if (event.type == EventID::e_TimeTick1000 && (g_WifiDevice.GetStatusFlags() & (ESP8266::e_StatusConnectedToAP | ESP8266::e_StatusHotspotEnabled)) && !g_WifiDevice.PokeRadio())
+        {
+            Beeper::Beep(BeepID::e_KeyPress);
             g_NetIF.ReconfigureRadio();
         }
         int32 v1 = ADCA.CH0.RES;
