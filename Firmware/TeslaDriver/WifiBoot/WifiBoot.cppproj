@@ -97,7 +97,7 @@
   <avrgcccpp.compiler.directories.IncludePaths>
     <ListValues>
       <Value>../../TeslaDriver</Value>
-      <Value>../../../../../../AVR/Shared</Value>
+      <Value>../../../AVRFramework</Value>
       <Value>%24(PackRepoDir)\atmel\XMEGAA_DFP\1.0.39\include</Value>
     </ListValues>
   </avrgcccpp.compiler.directories.IncludePaths>
@@ -163,7 +163,7 @@
         <avrgcccpp.compiler.directories.IncludePaths>
           <ListValues>
             <Value>../../TeslaDriver</Value>
-            <Value>../../../../../../AVR/Shared</Value>
+            <Value>../../AVRFramework</Value>
             <Value>%24(PackRepoDir)\atmel\XMEGAA_DFP\1.0.39\include</Value>
           </ListValues>
         </avrgcccpp.compiler.directories.IncludePaths>

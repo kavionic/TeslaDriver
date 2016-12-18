@@ -343,7 +343,7 @@ void PWMController::Run()
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-void PWMController::SetupModulationDMAChannel(DMA_CH_t& channel, volatile PWMModulationPair* srcAddr, volatile uint16* pwmRegister)
+void PWMController::SetupModulationDMAChannel(DMA_CH_t& channel, volatile PWMModulationPair* srcAddr, volatile uint16_t* pwmRegister)
 {
     channel.CTRLA = DMA_CH_REPEAT_bm | DMA_CH_SINGLE_bm | DMA_CH_BURSTLEN_4BYTE_gc;
     channel.TRFCNT = 4; // MODULATION_BUFFER_SIZE * 2;

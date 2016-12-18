@@ -398,10 +398,10 @@ int main(void)
             Beeper::Beep(BeepID::e_KeyPress);
             g_NetIF.ReconfigureRadio();
         }
-        int32 v1 = ADCA.CH0.RES;
-        int32 v2 = ADCA.CH1.RES;
+        int32_t v1 = ADCA.CH0.RES;
+        int32_t v2 = ADCA.CH1.RES;
         
-        static const int32 PREC = 1000;
+        static const int32_t PREC = 1000;
         v1 = I32(v1) * PREC * 7800 / 1000 / 2047;
         v2 = I32(v2) * PREC * 21000 / 1000 / 2047;
         
