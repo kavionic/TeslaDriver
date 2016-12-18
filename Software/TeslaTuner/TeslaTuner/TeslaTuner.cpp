@@ -542,7 +542,10 @@ void TeslaTuner::UpdateDeadTimeHSSliderValue()
 
 void TeslaTuner::UpdateCurrentLimitLowSliderValue()
 {
-    m_CurrentLimitLowSliderValue->setText(QString::asprintf("%.0f", double(m_CurrentLimitLowSlider->value())));
+    double sampleValue(m_CurrentLimitLowSlider->value());
+    double voltage = sampleValue * 3.3 / 4095;
+    double shuntCurrent = (voltage - 1.65) / 0.5;
+    m_CurrentLimitLowSliderValue->setText(QString::asprintf("%.1fA", shuntCurrent * 100.0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -551,7 +554,10 @@ void TeslaTuner::UpdateCurrentLimitLowSliderValue()
 
 void TeslaTuner::UpdateCurrentLimitHighSliderValue()
 {
-    m_CurrentLimitHighSliderValue->setText(QString::asprintf("%.0f", double(m_CurrentLimitHighSlider->value())));
+    double sampleValue(m_CurrentLimitHighSlider->value());
+    double voltage = sampleValue * 3.3 / 4095;
+    double shuntCurrent = (voltage - 1.65) / 0.5;
+    m_CurrentLimitHighSliderValue->setText(QString::asprintf("%.1fA", shuntCurrent * 100.0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
