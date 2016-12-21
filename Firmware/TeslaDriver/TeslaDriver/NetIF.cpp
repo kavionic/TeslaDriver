@@ -26,6 +26,7 @@
 
 #include "NetIF.h"
 #include "UserIF.h"
+#include "ADCController.h"
 #include "PWMController.h"
 #include "DS18B20.h"
 #include "EventSys.h"
@@ -284,15 +285,15 @@ void NetIF::Run(const Event& event)
             reply.m_PWMPeriode = g_PWMController.GetPeriod();
             reply.m_PWMDutyCycle = g_PWMController.GetDutyCycle();
             g_PWMController.GetDeadTime(&reply.m_PWMDeadTimeLS, &reply.m_PWMDeadTimeHS);
-            g_PWMController.GetCurrentLimits(&reply.m_PWMCurrentLimitLow, &reply.m_PWMCurrentLimitHigh);
+            ADCController::Instance.GetCurrentLimits(&reply.m_PWMCurrentLimitLow, &reply.m_PWMCurrentLimitHigh);
             g_PWMController.GetModulationScale(reply.m_ModulationMultiplier, reply.m_ModulationShifter);
             reply.m_ModulationSampleRate  = g_PWMController.GetModulationSampleRate();
             reply.m_Temperature1          = DS18B20::GetTemp1();
             reply.m_Temperature2          = DS18B20::GetTemp2();
             reply.m_TemperatureResolution = DS18B20::GetResolution();
             cli();
-            reply.m_CurrentLow            = ADCB.CH0.RES;
-            reply.m_CurrentHigh           = ADCB.CH1.RES;
+            reply.m_CurrentLow            = ADC_CURSENSE_LOW.RES;
+            reply.m_CurrentHigh           = ADC_CURSENSE_HIGH.RES;
             sei();
             //printf_P(PSTR("Sending PWM status.\n"));
             for (uint8_t i = 0 ; i < ESP8266::WIFI_MAX_LINKS ; ++i) {
@@ -486,7 +487,8 @@ void NetIF::ProcessMessage(uint8_t linkID)
             g_PWMController.SetDeadTime(m_Packages.m_SetPWMDeadTime.m_DeadTimeLS, m_Packages.m_SetPWMDeadTime.m_DeadTimeHS);
             break;
         case WifiCmd_e::e_SetCurrentLimits:
-            g_PWMController.SetCurrentLimits(m_Packages.m_SetPWMCurrentLimits.m_LimitLow, m_Packages.m_SetPWMCurrentLimits.m_LimitHigh);
+            ADCController::Instance.SetCurrentLimits(m_Packages.m_SetPWMCurrentLimits.m_LimitLow, m_Packages.m_SetPWMCurrentLimits.m_LimitHigh);
+            break;
         case WifiCmd_e::e_SetPWMTemperatureResolution:
             DS18B20::SetResolution(m_Packages.m_SetValue8.m_Value);
             break;

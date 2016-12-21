@@ -41,10 +41,14 @@
 //   -PIN6(12)  : Quad decoder(1) phase 1
 //   -PIN7(13)  : Quad decoder(3) phase 2
 //  PORTC
-//   -PIN4(20)  : PWM1H(2)
-//   -PIN5(21)  : PWM1L(1)
-//   -PIN6(22)  : PWM2L(3)
-//   -PIN7(23)  : PWM2H(4)
+//   -PIN0(16)  : PWM1H(2)
+//   -PIN1(17)  : PWM1L(1)
+//   -PIN2(18)  : PWM2L(3)
+//   -PIN3(19)  : PWM2H(4)
+//   -PIN4(20)  : SD_CS
+//   -PIN5(21)  : SD_SCK
+//   -PIN6(22)  : SC_MISO
+//   -PIN7(23)  : SD_MOSI
 //  PORTD
 //   -PIN0(26)  : FAN1 PWM
 //   -PIN1(27)  : FAN2 PWM
@@ -105,22 +109,22 @@
 ///////////////////////////////////////
 // AD Converters:
 //  ADCA
-//   -CH0
-//   -CH1
-//   -CH2
-//   -CH3
+//   -CH0   : V sense  5V
+//   -CH1   : V sense 12V
+//   -CH2   : V sense 48V
+//   -CH3   : V sense 3.3V
 //
 //  ADCB
-//   -CH0
-//   -CH1
-//   -CH2
+//   -CH0   : Current sense low.
+//   -CH1   : Current sense high.
+//   -CH2   : Current reference sense.
 //   -CH3
 
 ///////////////////////////////////////
 // DA Converters:
 //  DACB
-//   -CH0
-//   -CH1
+//   -CH0   : Current limit low
+//   -CH1   : Current limit high
 
 ///////////////////////////////////////
 // Analog Comparators:
@@ -128,8 +132,8 @@
 //   -CH0
 //   -CH1
 //  ACB
-//   -CH0
-//   -CH1
+//   -CH0   : Current limit high.
+//   -CH1   : Current limit low.
 
 
 #define CPU_FREQ 32000000
@@ -179,6 +183,16 @@
 #define BUZZER_PORT e_DigitalPortID_D
 #define BUZZER_PIN1 PIN4_bm
 #define BUZZER_PIN2 PIN5_bm
+
+/// AD converters:
+#define ADC_VSENSE3_3   ADCA.CH0
+#define ADC_VSENSE5     ADCA.CH1
+#define ADC_VSENSE12    ADCA.CH2
+#define ADC_VSENSE48    ADCA.CH3
+
+#define ADC_CURSENSE_LOW  ADCB.CH0
+#define ADC_CURSENSE_HIGH ADCB.CH1
+#define ADC_CURSENSE_REF  ADCB.CH2
 
 /// Temperature sensor ////////////////////////////////////////////////////////
 

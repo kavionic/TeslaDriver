@@ -203,6 +203,12 @@
     <Compile Include="AccessPointSelector.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="ADCController.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="ADCController.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="Beeper.cpp">
       <SubType>compile</SubType>
     </Compile>

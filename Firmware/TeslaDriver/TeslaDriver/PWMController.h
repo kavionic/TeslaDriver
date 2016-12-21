@@ -54,10 +54,7 @@ public:
     
     void SetDeadTime(uint8_t deadTimeLS, uint8_t deadTimeHS);
     void GetDeadTime(uint8_t* deadTimeLS, uint8_t* deadTimeHS) const;
-    
-    void SetCurrentLimits(uint16_t limitLow, uint16_t limitHigh);
-    void GetCurrentLimits(uint16_t* limitLow, uint16_t* limitHigh) const;
-    
+        
     int16_t  GetAvaialbleModulationDataSpace() const;
     int16_t  WriteModulationData(const uint8_t* data, int16_t size);
     void     SetModulationSampleRate(uint16_t sampleRate);

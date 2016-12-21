@@ -50,6 +50,7 @@ void * operator new(std::size_t n)
 #include "ESP8266/ESP8266.h"
 
 #include "NetIF.h"
+#include "ADCController.h"
 #include "PWMController.h"
 #include "DS18B20.h"
 #include "UserIF.h"
@@ -68,6 +69,7 @@ void * operator new(std::size_t n)
 
 
 ESP8266       g_WifiDevice;
+ADCController ADCController::Instance;
 PWMController g_PWMController;
 DS18B20       g_TempSensor;
 Keyboard      g_Keyboard;
@@ -347,6 +349,7 @@ int main(void)
         
     g_TempSensor.Initialize();
     
+    ADCController::Instance.Initialize();
     g_PWMController.Initialize();
  
     Beeper::Initialize();   
@@ -398,8 +401,8 @@ int main(void)
             Beeper::Beep(BeepID::e_KeyPress);
             g_NetIF.ReconfigureRadio();
         }
-        int32_t v1 = ADCA.CH0.RES;
-        int32_t v2 = ADCA.CH1.RES;
+        int32_t v1 = ADC_VSENSE5.RES;
+        int32_t v2 = ADC_VSENSE12.RES;
         
         static const int32_t PREC = 1000;
         v1 = I32(v1) * PREC * 7800 / 1000 / 2047;

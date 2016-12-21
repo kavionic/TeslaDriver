@@ -20,6 +20,11 @@
 #ifndef WIFIPROTOCOL_H_
 #define WIFIPROTOCOL_H_
 
+enum class TeslaProtocolVersions_e
+{
+    e_Boot = 1,
+    e_Tuner = 1    
+};
 
 enum class WifiCmd_e : uint8_t
 {
