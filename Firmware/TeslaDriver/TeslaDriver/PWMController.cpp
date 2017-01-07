@@ -51,7 +51,7 @@ static uint8_t  g_ModulationMultiplier = 157;
 static uint8_t  g_ModulationShifter = 7;
 static uint16_t g_DutyCycle;
 static uint16_t g_PWMThreshold;
-static uint16_t g_PWMMinThreshold;
+//static uint16_t g_PWMMinThreshold;
 //static int16_t g_PWMMaxSampleDelta;
 static int16_t g_PWMModulationCenter;
 
@@ -66,18 +66,11 @@ static inline void ScaleModulationData(PWMModulationPair* dst, const uint8_t* da
     for (int16_t i = 0 ; i < size ; ++i)
     {
         int16_t sample = (uint16_t(data[i] * g_ModulationMultiplier) >> g_ModulationShifter) + g_PWMModulationCenter;
-        if (sample < I16(g_PWMMinThreshold)) {
-            sample = g_PWMMinThreshold;
+        if (sample < 0 /*I16(g_PWMMinThreshold)*/) {
+            sample = 0; //g_PWMMinThreshold;
         } else if ( sample > maxVal ) {
              sample = maxVal;
         }
-/*        int16_t delta = sample - g_LastModulationBufferSample;
-        if (delta > g_PWMMaxSampleDelta) {
-            sample = g_LastModulationBufferSample + g_PWMMaxSampleDelta;
-        } else if (delta < -g_PWMMaxSampleDelta) {
-            sample = g_LastModulationBufferSample - g_PWMMaxSampleDelta;
-        }
-        g_LastModulationBufferSample = sample;*/
         dst[i].m_Low = sample;
         dst[i].m_High = PWM_TIMER.PERBUF - sample;
     }
@@ -212,8 +205,8 @@ void PWMController::Initialize()
     HIRESC.CTRLA = HIRES_HREN0_bm | BIT(2,1);
 	
         
-    SetPeriod(CPU_FREQ * 4 / 103000);
-    SetDutyCycle(32768);
+    SetPeriod(CPU_FREQ * 4 / 81894);
+    SetDutyCycle(0);
     PWM_TIMER.PER = PWM_TIMER.PERBUF;
     PWM_TIMER.CCA = PWM_TIMER.CCABUF;
     PWM_TIMER.CCB = PWM_TIMER.CCBBUF;
@@ -308,7 +301,7 @@ void PWMController::SetPeriod(uint16_t period)
 {
     g_PWMThreshold = (U32(g_DutyCycle) * period + 65536) >> 17; // / (65535*2);
     g_PWMModulationCenter = g_PWMThreshold - ((127 * g_ModulationMultiplier) >> g_ModulationShifter);    
-    g_PWMMinThreshold = 64; //period / 10; // Never allow duty cycle between 0% and 5% as it confuses the H-bridge.
+//    g_PWMMinThreshold = 64; //period / 10; // Never allow duty cycle between 0% and 5% as it confuses the H-bridge.
 //    g_PWMMaxSampleDelta = period / 2;
     PWM_TIMER.PERBUF    = period;
     PWM_TIMER.PWM_CMP_MID = period >> 1;    // We use CCC to detect underflow and CCD to detect overflow for current measurements.
@@ -338,9 +331,9 @@ void PWMController::SetDutyCycle(uint16_t dutyCycle)
     
 //    uint16_t pwm = U32(dutyCycle) * PWM_TIMER.PERBUF / (65535*2);
     g_PWMThreshold = (U32(dutyCycle) * PWM_TIMER.PERBUF + 65536) >> 17; // / (65535*2);
-    if (g_PWMThreshold != 0 && g_PWMThreshold < g_PWMMinThreshold) {
-        g_PWMThreshold = g_PWMMinThreshold;
-    }
+//    if (g_PWMThreshold != 0 && g_PWMThreshold < g_PWMMinThreshold) {
+//        g_PWMThreshold = g_PWMMinThreshold;
+//    }
     g_PWMModulationCenter = g_PWMThreshold - ((127 * g_ModulationMultiplier) >> g_ModulationShifter);
     
     cli();

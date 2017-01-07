@@ -33,6 +33,17 @@
 #include "Misc/Clock.h"
 #include "Misc/SpinTimer.h"
 
+void BootNetIF::Initialize()
+{
+    if (g_WifiDevice.GetStatusFlags() & ESP8266::e_StatusServerRunning)
+    {
+        m_State = e_StateRunning;
+    }
+    else
+    {
+        ReconfigureRadio();
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
@@ -43,11 +54,11 @@ void BootNetIF::RestartRadio()
 //    uint32_t startTime = Clock::GetTime();
     DB_LOG(DP_INFO, PSTRL("Initializing radio."));
     g_WifiDevice.ResetRadio();
-    g_WifiDevice.EnableEcho(false);
+/*    g_WifiDevice.EnableEcho(false);
     if (!g_WifiDevice.SetBaudrate()){
         return;
     }
-    g_WifiDevice.SetMuxMode(WifiMuxMode_e::e_Multiple);
+    g_WifiDevice.SetMuxMode(WifiMuxMode_e::e_Multiple);*/
 //    DB_LOG(DP_INFO, PSTRL("Radio reset took "), Clock::GetTime() - startTime, PSTRL("mS"));
     DB_LOG(DP_INFO, PSTRL("Radio reset done."));    
 }
@@ -402,6 +413,7 @@ void BootNetIF::ProcessMessage(uint8_t linkID)
             }
             // FALL THROUGH //                
         case WifiCmd_e::e_Reboot:
+            g_WifiDevice.StopServer();
             CCP = CCP_IOREG_gc;
             RST.CTRL = RST_SWRST_bm;
             break;

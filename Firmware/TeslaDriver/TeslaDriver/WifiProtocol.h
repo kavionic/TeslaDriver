@@ -38,6 +38,8 @@ enum class WifiCmd_e : uint8_t
     e_GetRadioStatus = 6,
     e_GetRadioStatusReply = 7,
     e_BytesReceivedReply = 8,
+    e_ReadVoltageRails = 9,
+    e_ReadVoltageRailsReply = 10,
     
     // Bootloader messages:
     e_EraseProgramSection = 18,
@@ -151,6 +153,13 @@ struct WifiSetPreferredBootMode : WifiPackageHeader
     bool           m_Reboot;
 };
 
+struct WifiReadVoltageRailsReply : WifiPackageHeader
+{
+    uint16_t m_Voltage3;
+    uint16_t m_Voltage5;
+    uint16_t m_Voltage12;
+    uint16_t m_Voltage48;
+};
 
 struct WifiSetPWMDeadTime : WifiPackageHeader
 {

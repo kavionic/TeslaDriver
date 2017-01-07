@@ -40,6 +40,7 @@ public:
 
     NetIF();
 
+    void Initialize();
     void RestartRadio();    
     void Stop();
 //    void InitRadio();
@@ -55,8 +56,9 @@ public:
 private:
     enum PendingReplies_e
     {
-        e_PendingReplyPong,
-        e_PendingReplyGetSystemInfo,
+        e_PendingReplyPong             = 0x01,
+        e_PendingReplyGetSystemInfo    = 0x02,
+        e_PendingReplyReadVoltageRails = 0x04
     };
     void ProcessMessage(uint8_t linkID);
     

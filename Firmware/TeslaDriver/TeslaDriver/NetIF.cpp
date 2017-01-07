@@ -47,6 +47,18 @@ NetIF::NetIF()
     //InitRadio();
 }
 
+void NetIF::Initialize()
+{
+    if (g_WifiDevice.GetStatusFlags() & ESP8266::e_StatusServerRunning)
+    {
+        m_State = e_StateRunning;
+    }
+    else
+    {
+        ReconfigureRadio();
+    }
+}
+
 void NetIF::RestartRadio()
 {
     uint32_t startTime = Clock::GetTime();
@@ -60,20 +72,20 @@ void NetIF::RestartRadio()
     /*        if (!g_WifiDevice.RestartRadio()){
         continue;
     }*/
-    g_WifiDevice.EnableEcho(false);
+//    g_WifiDevice.EnableEcho(false);
     //g_Display.SetCursor(0, 0);
     //g_Display.Printf_P(PSTR("Set ESP baudrate..."));
     //g_Display.ClearToEndOfLine();
-    if (!g_WifiDevice.SetBaudrate()){
-        return;
-    }
+//    if (!g_WifiDevice.SetBaudrate()){
+//        return;
+//    }
     //g_Display.SetCursor(0, 0);
     //g_Display.Printf_P(PSTR("Misc radio setup..."));
     //g_Display.ClearToEndOfLine();
 //    if (!g_WifiDevice.GetModuleVersion()){
 //        return;
 //    }
-    g_WifiDevice.SetMuxMode(WifiMuxMode_e::e_Multiple);
+//    g_WifiDevice.SetMuxMode(WifiMuxMode_e::e_Multiple);
 /*    if (!g_WifiDevice.SetWifiMode(WifiMode_e::e_Station)){
         return;
     }*/
@@ -241,24 +253,36 @@ void NetIF::Run(const Event& event)
     }
     else if (m_State == e_StateRunning)
     {
-        if (m_PendingReplies & BIT8(e_PendingReplyPong, 1))
+        if (m_PendingReplies & e_PendingReplyPong)
         {
-            m_PendingReplies &= U8(~BIT8(e_PendingReplyPong, 1));
+            m_PendingReplies &= U8(~e_PendingReplyPong);
             WifiPackageHeader reply;
             WifiPackageHeader::InitMsg(reply, WifiCmd_e::e_Pong);
             
             g_WifiDevice.SendIPData(m_CurrentLinkID, &reply, sizeof(reply));
         }
-        if (m_PendingReplies & BIT8(e_PendingReplyGetSystemInfo, 1))
+        if (m_PendingReplies & e_PendingReplyGetSystemInfo)
         {
-            m_PendingReplies &= U8(~BIT8(e_PendingReplyGetSystemInfo, 1));
+            m_PendingReplies &= U8(~e_PendingReplyGetSystemInfo);
             
             WifiGetSystemInfoReply reply;
             WifiPackageHeader::InitMsg(reply, WifiCmd_e::e_GetSystemInfoReply);
             reply.InitSystemInfo(WifiBootMode_e::e_Application, WifiBootMode_e(g_EEPROM.global.m_PreferredBootMode), Clock::GetTime());
             g_WifiDevice.SendIPData(m_CurrentLinkID, &reply, sizeof(reply));
         }
-        
+        if (m_PendingReplies & e_PendingReplyReadVoltageRails)
+        {
+            m_PendingReplies &= U8(~e_PendingReplyReadVoltageRails);
+            
+            WifiReadVoltageRailsReply reply;
+            WifiPackageHeader::InitMsg(reply, WifiCmd_e::e_ReadVoltageRailsReply);
+            reply.m_Voltage3  = ADCController::Instance.GetVoltage3();
+            reply.m_Voltage5  = ADCController::Instance.GetVoltage5();
+            reply.m_Voltage12 = ADCController::Instance.GetVoltage12();
+            reply.m_Voltage48 = ADCController::Instance.GetVoltage48();
+
+            g_WifiDevice.SendIPData(m_CurrentLinkID, &reply, sizeof(reply));
+        }
     //    static uint8_t prevModulationBuffer = 1;
     
     //    if ( g_PWMController.GetCurrentModulationBuffer() != prevModulationBuffer )
@@ -457,7 +481,7 @@ void NetIF::ProcessMessage(uint8_t linkID)
     {
         case WifiCmd_e::e_Ping:
             //printf_P(PSTR("Get Radio status\n"));
-            m_PendingReplies |= BIT8(e_PendingReplyPong, 1);
+            m_PendingReplies |= e_PendingReplyPong;
             break;
         case WifiCmd_e::e_SetPreferredBootMode:
             eeprom_write_byte(&g_EEPROMunmapped.global.m_PreferredBootMode, U8(m_Packages.m_SetPreferredBootMode.m_BootMode));
@@ -468,12 +492,18 @@ void NetIF::ProcessMessage(uint8_t linkID)
             }
             // FALL THROUGH //                
         case WifiCmd_e::e_Reboot:
+            g_WifiDevice.StopServer();
             CCP = CCP_IOREG_gc;
             RST.CTRL = RST_SWRST_bm;
             break;
         case WifiCmd_e::e_GetSystemInfo:
-            m_PendingReplies |= BIT8(e_PendingReplyGetSystemInfo, 1);
+            m_PendingReplies |= e_PendingReplyGetSystemInfo;
             break;
+            
+        case WifiCmd_e::e_ReadVoltageRails:
+            m_PendingReplies |= e_PendingReplyReadVoltageRails;
+            break;
+            
         case WifiCmd_e::e_SetPWMDutyCycle:
             //printf_P(PSTR("Set PWM: %d\n"), uint16_t((uint32_t(m_Packages.m_SetValue16.m_Value) * 100 + 32768) / 65536));
             g_PWMController.SetDutyCycle(m_Packages.m_SetValue16.m_Value);

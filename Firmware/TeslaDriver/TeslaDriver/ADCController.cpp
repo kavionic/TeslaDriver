@@ -17,6 +17,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 #include <avr/io.h>
+#include <string.h>
 
 #include "ADCController.h"
 #include "Hardware.h"
@@ -39,10 +40,10 @@ void ADCController::Initialize()
 
     // Setup ADC A for measuring the various voltage rails:
     ADCA.CTRLA = ADC_ENABLE_bm;
-    ADCA.CTRLB = ADC_CONMODE_bm | ADC_FREERUN_bm;
+    ADCA.CTRLB = /*ADC_IMPMODE_bm |*/ ADC_FREERUN_bm;
     ADCA.REFCTRL = ADC_REFSEL_INT1V_gc | ADC_BANDGAP_bm | ADC_TEMPREF_bm;
-    ADCA.EVCTRL  = ADC_EVSEL_0123_gc | ADC_EVACT_SWEEP_gc;
-    ADCA.PRESCALER = ADC_PRESCALER_DIV256_gc; // Max 125kHz ADC clock when measuring internal signals.
+    ADCA.EVCTRL  = ADC_EVACT_SWEEP_gc | ADC_SWEEP_0123_gc;
+    ADCA.PRESCALER = ADC_PRESCALER_DIV512_gc; // Max 125kHz ADC clock when measuring internal signals.
     
 
     ADC_VSENSE3_3.CTRL = ADC_CH_INPUTMODE_INTERNAL_gc;
@@ -114,6 +115,65 @@ void ADCController::Run()
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
+uint8_t ADCController::BinarySearch( int16_t a[], uint8_t length, int16_t key )
+{
+    uint8_t low = 0;
+    uint8_t high = length;
+
+    for (;;)
+    {
+        if ( low == high ) return low;
+        uint8_t mid = low + ((high - low) >> 1);
+
+        if (key > a[mid])
+        {
+            low = mid + 1;
+            continue;
+        }
+        else if (key < a[mid])
+        {
+            high = mid;
+            continue;
+        }
+        return mid;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void ADCController::InsertSample( int16_t* buffer, uint8_t len, int16_t value )
+{
+    uint8_t i = BinarySearch(buffer, len, value);
+    memmove(buffer + i + 1, buffer + i, (len - i) * sizeof(*buffer));
+    buffer[i] = value;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void ADCController::SampleCurrent()
+{
+    InsertSample(m_CurrentMeasurementsLow, m_CurrentMeasurementsCount, ADC_CURSENSE_LOW.RES);
+    InsertSample(m_CurrentMeasurementsHigh, m_CurrentMeasurementsCount, ADC_CURSENSE_HIGH.RES);
+    if (m_CurrentMeasurementsCount != CURRENT_MEASURE_COUNT - 1)
+    {
+        m_CurrentMeasurementsCount++;
+    }
+    else
+    {
+        m_CurrentMeasureLow  = (m_CurrentMeasurementsLow[CURRENT_MEASURE_COUNT/2] * 8 - m_CurrentMeasureLow) / 8;
+        m_CurrentMeasureHigh = (m_CurrentMeasurementsHigh[CURRENT_MEASURE_COUNT/2] * 8 - m_CurrentMeasureHigh) / 8;
+        m_CurrentMeasurementsCount = 0;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
 void ADCController::SetCurrentLimits(uint16_t limitLow, uint16_t limitHigh)
 {
     DACB.CH0DATA = m_CurrentSenseOffset + limitLow;
@@ -134,37 +194,40 @@ void ADCController::GetCurrentLimits(uint16_t* limitLow, uint16_t* limitHigh) co
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-int16_t ADCController::GetVoltage3()
+uint16_t ADCController::GetVoltage3()
 {
-    return ADC_VSENSE3_3.RES;    
+    int32_t voltage = ADC_VSENSE3_3.RES - 200;
+    return (voltage * 10000) / 4095;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-int16_t ADCController::GetVoltage5()
+uint16_t ADCController::GetVoltage5()
 {
-    return ADC_VSENSE5.RES;    
+    int32_t voltage = ADC_VSENSE5.RES - 200;
+    return (voltage * 7800) / 4095; // voltage * 1000mS * 7800ohm / 1000ohm / 4095
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-int16_t ADCController::GetVoltage12()
+uint16_t ADCController::GetVoltage12()
 {
-    return ADC_VSENSE12.RES;
-    
+    int32_t voltage = ADC_VSENSE12.RES - 200;
+    return (voltage * 21000) / 4095; // voltage * 1000mS * 21000ohm / 1000ohm / 4095
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
-int16_t ADCController::GetVoltage48()
+uint16_t ADCController::GetVoltage48()
 {
-    return ADC_VSENSE48.RES;    
+    int32_t voltage = ADC_VSENSE48.RES - 200;
+    return (voltage * 69000) / 4095; // voltage * 1000mS * 69000ohm / 1000ohm / 4095
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -182,7 +245,7 @@ int16_t ADCController::GetCurrentSenseRefVoltage()
  
 int16_t ADCController::GetCurrentLow()
 {
-    return ADC_CURSENSE_LOW.RES;
+    return m_CurrentMeasureLow / 8; //ADC_CURSENSE_LOW.RES;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -191,7 +254,7 @@ int16_t ADCController::GetCurrentLow()
 
 int16_t ADCController::GetCurrentHigh()
 {
-    return ADC_CURSENSE_HIGH.RES;    
+    return m_CurrentMeasureHigh / 8; // ADC_CURSENSE_HIGH.RES;    
 }
 
 ///////////////////////////////////////////////////////////////////////////////

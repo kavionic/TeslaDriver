@@ -139,7 +139,9 @@ int main(void)
     PWM_OUT_PORT->OUTCLR = PWM_OUT_PINS;
     PWM_OUT_PORT->DIRSET = PWM_OUT_PINS;
     
-    if (WifiBootMode_e(eeprom_read_byte(&g_EEPROMunmapped.global.m_PreferredBootMode)) == WifiBootMode_e::e_Application  /*(RST.STATUS & RST_SRF_bm) == 0*/ && pgm_read_word_near(0) != 0xffff) {
+    bool softwareReset  = (RST.STATUS & RST_SRF_bm) != 0;
+
+    if (WifiBootMode_e(eeprom_read_byte(&g_EEPROMunmapped.global.m_PreferredBootMode)) == WifiBootMode_e::e_Application && pgm_read_word_near(0) != 0xffff) {
         asm("jmp 0");
     }
     RST.STATUS |= RST_PORF_bm | RST_EXTRF_bm | RST_BORF_bm | RST_WDRF_bm | RST_PDIRF_bm | RST_SRF_bm | RST_SDRF_bm;
@@ -181,8 +183,8 @@ int main(void)
 //    g_Display.InitializeDisplay();
 //    g_Display.EnableDisplay(true);
 
-    g_WifiDevice.Initialize(false);
-    g_BootNetIF.ReconfigureRadio();
+    g_WifiDevice.Initialize(softwareReset, false);
+    g_BootNetIF.Initialize();
 
     while(1)
     {

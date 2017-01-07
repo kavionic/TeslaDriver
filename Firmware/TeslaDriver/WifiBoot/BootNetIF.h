@@ -38,6 +38,7 @@ public:
         e_StateRunning
     };
 
+    void Initialize();
     void RestartRadio();    
     void Stop();
     void ReconfigureRadio();

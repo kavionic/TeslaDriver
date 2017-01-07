@@ -194,6 +194,8 @@ ISR(TCE0_OVF_vect)
     Clock::AddCycles();
     sei();
 
+    ADCController::Instance.SampleCurrent();
+
     if ( !(--g_TimerTick10) )
     {
         g_TimerTick10 = 20;
@@ -317,6 +319,7 @@ int main(void)
 
     g_Keyboard.Initialize();
 
+    bool softwareReset  = false;
     printf_P(PSTR("Reset flags: %x\n"), RST.STATUS);
     if (RST.STATUS & RST_PORF_bm) {
         printf_P(PSTR("Power on reset.\n"));
@@ -335,6 +338,7 @@ int main(void)
     }
     if (RST.STATUS & RST_SRF_bm) {
         printf_P(PSTR("Software reset.\n"));
+        softwareReset = true;
     }
     if (RST.STATUS & RST_SDRF_bm) {
         printf_P(PSTR("Reset by spike-detect!\n"));
@@ -364,9 +368,9 @@ int main(void)
     
     sei();
 
-    g_WifiDevice.Initialize(false);
+    g_WifiDevice.Initialize(softwareReset, false);
     Beeper::Beep(BeepID::e_KeyPress);
-    g_NetIF.ReconfigureRadio();
+    g_NetIF.Initialize();
     
     printf_P(PSTR("...radio initialized.\n"));
  
