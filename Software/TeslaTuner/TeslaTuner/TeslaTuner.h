@@ -97,10 +97,12 @@ private:
     void SendPing();
     void RequestRadioStatus();
     void RequestPWMStatus();
+    void ReadVoltageRails();
     void SendModulationData();
 
     void EnableControls(bool enable);
     void UpdatePWMStatusView();
+    void UpdateSystemStatusView();
     void ProcessResponse();
 
     static DeviceInfo s_DeviceInfo;
@@ -109,26 +111,32 @@ private:
     QTimer     m_RefreshTimer;
     QElapsedTimer m_TimeSinceSystemInfoRequest;
     QElapsedTimer m_TimeSincePWMStatusRequest;
+    QElapsedTimer m_TimeSinceReadVoltageRailsRequest;
     QElapsedTimer m_TimeSinceModulationSent;
     uint64_t      m_ModulationSendTime = 0;
     double        m_ModulationBitrate = 0.0;
     bool                  m_IsStatusUpdatePending = false;
     bool                  m_IsPWMStatusValid = false;
+
+    bool                  m_IsReadVoltageRailsPending = false;
+    bool                  m_IsVoltageRailsStatusValid = false;
     bool                  m_UpdateSliders = false; // Set to true when connection established and to false on the first update from the device.
 
-    WifiGetPWMStatusReply m_PWMStatus;
+    WifiGetPWMStatusReply     m_PWMStatus;
+    WifiReadVoltageRailsReply m_VoltageRailsStatus;
 
     bool m_IsModulationDataPending = false;
 
     union
     {
-        char                    m_Buffer[1];
-        WifiPackageHeader       m_Header;
-        WifiSetVal16            m_SetVal16;
-        WifiSetVal32            m_SetVal32;
-        WifiGetSystemInfoReply  m_GetSystemInfoReply;
-        WifiGetRadioStatusReply m_GetRadioStatusReply;
-        WifiGetPWMStatusReply   m_GetPWMStatusReply;
+        char                      m_Buffer[1];
+        WifiPackageHeader         m_Header;
+        WifiSetVal16              m_SetVal16;
+        WifiSetVal32              m_SetVal32;
+        WifiGetSystemInfoReply    m_GetSystemInfoReply;
+        WifiGetRadioStatusReply   m_GetRadioStatusReply;
+        WifiGetPWMStatusReply     m_GetPWMStatusReply;
+        WifiReadVoltageRailsReply m_ReadVoltageRailsReply;
     } m_ResponsePackages;
     int m_ResponseBytesReceived = 0;
 

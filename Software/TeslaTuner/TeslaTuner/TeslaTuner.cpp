@@ -173,13 +173,17 @@ void TeslaTuner::closeEvent(QCloseEvent* event)
 void TeslaTuner::SlotConnectionStateChanged(QAbstractSocket::SocketState state)
 {
     m_IsStatusUpdatePending = false;
+    m_IsPWMStatusValid      = false;
+
+    m_IsReadVoltageRailsPending = false;
+    m_IsVoltageRailsStatusValid = false;
+
     m_IsModulationDataPending = false;
-    m_IsPWMStatusValid = false;
 
     m_ConnectionPanel->ConnectionStateChanged(state);
 //    m_FirmwareWriter->ConnectionStateChanged(state);
     UpdatePWMStatusView();
-
+    UpdateSystemStatusView();
     if (state != QAbstractSocket::ConnectedState)
     {
         m_FirmwareWriter->DeviceConnected(false);
@@ -343,6 +347,13 @@ void TeslaTuner::ProcessResponse()
             UpdatePWMStatusView();
 //            RequestPWMStatus();
             break;
+        case WifiCmd_e::e_ReadVoltageRailsReply:
+            m_VoltageRailsStatus = m_ResponsePackages.m_ReadVoltageRailsReply;
+            m_IsReadVoltageRailsPending = false;
+            m_IsVoltageRailsStatusValid = true;
+            UpdateSystemStatusView();
+            break;
+
         case WifiCmd_e::e_WritePWMModulationDataDone:
             m_IsModulationDataPending = false;
             SendModulationData();
@@ -382,6 +393,9 @@ void TeslaTuner::SlotRefreshTimer()
         m_ConnectionPanel->Run();
         if (!m_IsStatusUpdatePending && m_TimeSincePWMStatusRequest.elapsed() > 100) {
             RequestPWMStatus();
+        }
+        if (!m_IsReadVoltageRailsPending && m_TimeSinceReadVoltageRailsRequest.elapsed() > 500) {
+            ReadVoltageRails();
         }
         /*    if (!m_IsModulationDataPending && (m_TimeSinceModulationSent.elapsed() - m_ModulationSendTime) > 1000) {
                 SendModulationData();
@@ -773,6 +787,23 @@ void TeslaTuner::RequestPWMStatus()
 ///
 ///////////////////////////////////////////////////////////////////////////////
 
+void TeslaTuner::ReadVoltageRails()
+{
+    if (!m_IsReadVoltageRailsPending && m_DeviceSocket.state() == QAbstractSocket::ConnectedState)
+    {
+        m_IsReadVoltageRailsPending = true;
+
+        WifiPackageHeader msg;
+        WifiPackageHeader::InitMsg(msg, WifiCmd_e::e_ReadVoltageRails);
+        m_DeviceSocket.write(reinterpret_cast<const char*>(&msg), sizeof(msg));
+        m_TimeSinceReadVoltageRailsRequest.start();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
 void TeslaTuner::EnableControls(bool enable)
 {
     m_FrequencySlider->setEnabled(enable);
@@ -801,16 +832,10 @@ void TeslaTuner::UpdatePWMStatusView()
         m_PWMDeadTimeHS->setText(QString::asprintf("%.2fnS", double(m_PWMStatus.m_PWMDeadTimeHS) * 1e9 / double(m_PWMStatus.m_Frequency)));
         m_PWMTemperature1->setText(QString::asprintf("<qt>%.2f&deg;C</qt>", double(m_PWMStatus.m_Temperature1) / 16.0));
         m_PWMTemperature2->setText(QString::asprintf("<qt>%.2f&deg;C</qt>", double(m_PWMStatus.m_Temperature2) / 16.0));
-//        m_PWMCurrentLow->setText(QString::asprintf("%.2fA", double(m_PWMStatus.m_CurrentLo - 1024) / 1024.0 * 200.0));
-//        m_PWMCurrentHigh->setText(QString::asprintf("%.2fA", double(m_PWMStatus.m_CurrentHi - 1024) / 1024.0 * 200.0));
 
         static double currentLow = 0.0f;
         static double currentHigh = 0.0f;
 
-//        currentLow += 1;
-//        currentHigh -= 1;
-//        if (m_PWMStatus.m_CurrentLow < currentLow) currentLow = m_PWMStatus.m_CurrentLow;
-//        if (m_PWMStatus.m_CurrentHigh > currentHigh) currentHigh = m_PWMStatus.m_CurrentHigh;
         currentLow +=  (double(m_PWMStatus.m_CurrentLow) - currentLow) * 0.5;
         currentHigh +=  (double(m_PWMStatus.m_CurrentHigh) - currentHigh) * 0.5;
 //        currentLow = m_PWMStatus.m_CurrentLow;
@@ -837,13 +862,31 @@ void TeslaTuner::UpdatePWMStatusView()
             EnableControls(true);
         }
     }
-    else
+    m_PWMFrequency->setEnabled(m_IsPWMStatusValid);
+    m_PWMDutyCycle->setEnabled(m_IsPWMStatusValid);
+    m_PWMDeadTimeLS->setEnabled(m_IsPWMStatusValid);
+    m_PWMDeadTimeHS->setEnabled(m_IsPWMStatusValid);
+    m_PWMTemperature1->setEnabled(m_IsPWMStatusValid);
+    m_PWMTemperature2->setEnabled(m_IsPWMStatusValid);
+    m_PWMCurrentLow->setEnabled(m_IsPWMStatusValid);
+    m_PWMCurrentHigh->setEnabled(m_IsPWMStatusValid);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///
+///////////////////////////////////////////////////////////////////////////////
+
+void TeslaTuner::UpdateSystemStatusView()
+{
+    if (m_IsVoltageRailsStatusValid)
     {
-        m_PWMFrequency->setText("--");
-        m_PWMDutyCycle->setText("--");
-        m_PWMDeadTimeLS->setText("--");
-        m_PWMDeadTimeHS->setText("--");
-        m_PWMTemperature1->setText("--");
-        m_PWMTemperature2->setText("--");
+        m_Voltage3View->setText(QString::asprintf("%.2fV",  double(m_VoltageRailsStatus.m_Voltage3) / 1000.0));
+        m_Voltage5View->setText(QString::asprintf("%.2fV", double(m_VoltageRailsStatus.m_Voltage5) / 1000.0));
+        m_Voltage12View->setText(QString::asprintf("%.2fV", double(m_VoltageRailsStatus.m_Voltage12) / 1000.0));
+        m_Voltage48View->setText(QString::asprintf("%.2fV", double(m_VoltageRailsStatus.m_Voltage48) / 1000.0));
     }
+    m_Voltage3View->setEnabled(m_IsVoltageRailsStatusValid);
+    m_Voltage5View->setEnabled(m_IsVoltageRailsStatusValid);
+    m_Voltage12View->setEnabled(m_IsVoltageRailsStatusValid);
+    m_Voltage48View->setEnabled(m_IsVoltageRailsStatusValid);
 }

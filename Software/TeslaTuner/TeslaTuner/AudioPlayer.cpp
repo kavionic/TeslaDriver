@@ -161,7 +161,7 @@ int AudioPlayer::RequestData(QTcpSocket* socket, int length)
     static uint32_t phase = 0;
     for (int i = 0 ; i < length ; ++i)
     {
-#if 0
+#if 1
         uint32_t cyclePhase = phase % 510;
         if (cyclePhase < 256) {
             modulationData[i] = cyclePhase % 256;
@@ -171,7 +171,8 @@ int AudioPlayer::RequestData(QTcpSocket* socket, int length)
         phase += 10;
 #else
         uint32_t cyclePhase = phase % 100;
-        modulationData[i] = (cyclePhase < 90) ? (cyclePhase * 255 / 89) : 0;
+//        modulationData[i] = (cyclePhase < 90) ? (cyclePhase * 255 / 89) : 0;
+        modulationData[i] = (cyclePhase > 98) ? 255 : 0;
         phase++;
 #endif
     }
